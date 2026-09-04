@@ -3,6 +3,9 @@
 `grutopia/demo/go2_semantic_exploration.py` explores an initially unknown
 occupancy map until Go2 finds and approaches a text-described object or area.
 
+Install Isaac Sim, conda environments, and models with
+[environment-setup.md](environment-setup.md) first.
+
 ## Architecture
 
 The implementation adds three layers above the existing RGB-D/LiDAR map:
@@ -68,8 +71,8 @@ $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
   --perception-gpu 1 \
   --qwen-device cuda:3 \
   --target refrigerator \
-  --record-dir grutopia/results/go2_semantic_exploration/grscene_mv7_v26 \
-  --map-output grutopia/results/go2_semantic_exploration/grscene_mv7_v26/final_map
+  --record-dir grutopia/results/go2_semantic_exploration \
+  --map-output grutopia/results/go2_semantic_exploration/final_map
 ```
 
 The empty programmatic room is still available with `--scene programmatic`.
