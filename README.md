@@ -2,72 +2,142 @@
 
 Go2 open-vocabulary semantic exploration on an unknown occupancy map. This
 repository is a self-contained slice of the InternUtopia / GRUtopia stack:
-Isaac Sim runtime, Unitree Go2 locomotion, RGB-D/LiDAR mapping, semantic
-Voronoi exploration, and the GRScenes MV7 refrigerator run.
+Isaac Sim runtime, Unitree Go2 locomotion, RGB-D/LiDAR mapping, and semantic
+Voronoi exploration.
 
-The reference result is the successful `grscene_mv7_v26` run: Go2 starts in
-`MV7J6NIKTKJZ2AABAAAAADA8_usd`, explores until it lexically matches
-`refrigerator`, and stops about 1.2 m from the scanned fridge.
+The default demo places Go2 in a GRScenes home. It explores until it matches
+a text target such as `refrigerator` and walks up to the scanned object.
 
-## What this repo contains
+Follow the sections below in order. After step 8 you should have videos and a
+`final_map` under `grutopia/results/go2_semantic_exploration/`.
 
-- `grutopia/core`: Isaac Sim / Gym runtime
-- `grutopia_extension/interactive_navigation`: mapping, Voronoi graph, planner
-- `grutopia_extension/robots/go2*`, `controllers/isaac_go2_ctrl.py`: Go2 policy
-- `grutopia/demo/go2_semantic_exploration.py`: entry point
-- download helpers for the MV7 scene, Go2 USD, locomotion checkpoint, and VLM weights
+## 1. Hardware and software
 
-Large scene packs, old result videos, and unused robots (H1, G1, Franka, …)
-are not included.
+| Item | Requirement |
+| --- | --- |
+| OS | Ubuntu 20.04 or 22.04 |
+| GPU | NVIDIA RTX 2070 or newer. Full semantic mode is comfortable on 2–3 GPUs (24 GB class). One GPU is enough for the geometry-only smoke test. |
+| Driver | 535 or newer (535.129.03 is the Isaac Sim 4.2 recommendation) |
+| RAM | 32 GB or more |
+| Disk | about 25 GB for Qwen3-8B + GroundingDINO + CLIP + MobileSAM, plus Isaac Sim |
+| Simulator | [Isaac Sim 4.2.0](https://docs.omniverse.nvidia.com/isaacsim/latest/installation/install_workstation.html) only. Do not use 4.1 or 4.5. |
+| Python | 3.10, provided by Isaac Sim |
+| Conda | Miniconda or Anaconda |
 
-## Requirements
+Isaac Sim and Qwen3 need different PyTorch / Transformers versions. This repo
+uses **two conda environments**:
 
-- Ubuntu 20.04 / 22.04
-- NVIDIA GPU, driver 535+
-- [Isaac Sim 4.2.0](https://docs.omniverse.nvidia.com/isaacsim/latest/installation/install_workstation.html)
-- A Python 3.10 environment that can import Isaac Sim (this repo was run with
-  a conda env named `isaaclab`)
-- A second Python environment for Qwen3 / GroundingDINO / MobileSAM (this repo
-  was run with a conda env named `CapNav`)
+- `grutopia`: Isaac Sim + this package (simulation, mapping, Go2 policy, CLIP)
+- `semexp`: GroundingDINO, MobileSAM, Qwen3-8B worker
 
-Isaac Sim and Qwen3 need different PyTorch / Transformers versions. Keep them
-separate.
+## 2. Install Isaac Sim 4.2.0
+
+1. Install the NVIDIA driver and verify `nvidia-smi` works.
+2. Install [Omniverse Isaac Sim 4.2.0 (workstation)](https://docs.omniverse.nvidia.com/isaacsim/latest/installation/install_workstation.html).
+3. Confirm the install contains `isaac-sim.sh` and `python.sh`. The default
+   path looks like:
+
+```text
+~/.local/share/ov/pkg/isaac-sim-4.2.0
+```
+
+If Isaac already runs from an Isaac Lab conda env (`isaaclab`), you can skip
+section 4 and point `ISAAC_PYTHON` at that env's `python`. It must still be
+Isaac Sim **4.2**.
+
+## 3. Clone this repository
 
 ```bash
 git clone https://github.com/zkj623/inter-nav-project.git
 cd inter-nav-project
+```
 
-# Isaac / simulation environment
+All later commands are run from this directory.
+
+## 4. Create the Isaac / simulation environment
+
+This links a conda env to Isaac Sim and installs the Python package.
+
+```bash
+# Needs conda on PATH. The script asks for the Isaac Sim folder
+# (the directory that contains isaac-sim.sh) and the env name.
+./setup_conda.sh
+```
+
+Accept the default env name `grutopia`, or type another name. Then:
+
+```bash
+conda activate grutopia
+python -m pip install -r requirements/runtime.txt
+
+# Confirm Isaac Sim imports
+python -c "import omni.isaac.kit; print('isaac ok')"
+```
+
+If you already have a working Isaac 4.2 Python (for example Isaac Lab):
+
+```bash
 export ISAAC_PYTHON=/path/to/isaaclab/bin/python
 $ISAAC_PYTHON -m pip install --no-deps -e .
 $ISAAC_PYTHON -m pip install -r requirements/runtime.txt
-
-# Isolated model environment
-export QWEN3_PYTHON=/path/to/CapNav/bin/python
-$QWEN3_PYTHON -m pip install -r requirements/semantic-exploration.txt
-$QWEN3_PYTHON -m pip install flask huggingface-hub
 ```
 
-## Assets
-
-Nothing under `grutopia/assets/` is committed. Download only the files used by
-the MV7 refrigerator experiment:
+In the commands below, `python` means the Isaac env. You can also set:
 
 ```bash
+export ISAAC_PYTHON="$(which python)"   # after conda activate grutopia
+```
+
+## 5. Create the model environment
+
+Do **not** install these packages into the Isaac env.
+
+```bash
+conda create -y -n semexp python=3.10
+conda activate semexp
+python -m pip install -r requirements/semantic-exploration.txt
+```
+
+`requirements/semantic-exploration.txt` installs recent `torch`,
+`transformers`, MobileSAM, Flask, and Hugging Face Hub. If the default PyTorch
+wheel does not match your CUDA driver, install a CUDA build from
+[pytorch.org](https://pytorch.org/get-started/locally/) first, then rerun the
+requirements file.
+
+```bash
+export QWEN3_PYTHON="$(which python)"   # after conda activate semexp
+```
+
+Keep this variable set in every terminal that starts a model service or the
+Go2 demo.
+
+## 6. Download assets and models
+
+Nothing under `grutopia/assets/` is committed. From the repo root:
+
+```bash
+conda activate grutopia
 export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
 
-# GRScenes MV7 home + object metadata (~20 MB after extract)
-$ISAAC_PYTHON grutopia/demo/download_mv7_scene.py
+# GRScenes home used by the default profile (~ tens of MB after extract)
+python grutopia/demo/download_mv7_scene.py
 
-# Official Unitree Go2 USD
-$ISAAC_PYTHON grutopia/demo/download_go2_asset.py
+# Official Unitree Go2 USD (needs Isaac / Nucleus access)
+python grutopia/demo/download_go2_asset.py
 
 # isaac-go2-ros2 rough-terrain policy (SHA-256 verified)
-$ISAAC_PYTHON grutopia/demo/download_go2_policy.py
-
-# CLIP, GroundingDINO, MobileSAM, Qwen3-8B
-$QWEN3_PYTHON grutopia/demo/download_semantic_exploration_models.py
+python grutopia/demo/download_go2_policy.py
 ```
+
+```bash
+conda activate semexp
+# CLIP, GroundingDINO, MobileSAM, Qwen3-8B (about 20 GB)
+python grutopia/demo/download_semantic_exploration_models.py
+```
+
+If Hugging Face rate-limits you, run `huggingface-cli login` in `semexp`
+first. If Nucleus cannot fetch the Go2 USD, place `isaaclab_go2.usd` at the
+path below yourself.
 
 Expected layout:
 
@@ -76,59 +146,86 @@ grutopia/assets/scenes/GRScenes-100/home_scenes/scenes/MV7J6NIKTKJZ2AABAAAAADA8_
 grutopia/assets/benchmark/meta/MV7J6NIKTKJZ2AABAAAAADA8_usd/object_dict.json
 grutopia/assets/robots/go2/isaaclab_go2.usd
 grutopia/assets/robots/go2/policy/move_by_speed/rough_model_7850.pt
+grutopia/assets/models/mobile_sam.pt
 ```
 
-If HuggingFace is blocked, copy those paths from a machine that already has
-InternUtopia / GRScenes. The scene license is
+The scene license is
 [CC BY-NC-SA 4.0](https://huggingface.co/datasets/OpenRobotLab/GRScenes).
 
-## Perception services
+## 7. Start perception services
 
-Start GroundingDINO and MobileSAM before the Isaac run. Default ports match
-the Agent VLM endpoints used by `OpenVocabularyPerception`:
+Open two terminals in the **model** env. Pick a free GPU (example: `cuda:1`).
 
 ```bash
+cd /path/to/inter-nav-project
+conda activate semexp
+export QWEN3_PYTHON="$(which python)"
+
 $QWEN3_PYTHON grutopia/demo/serve_semantic_perception.py grounding-dino \
   --host 127.0.0.1 --port 12181 --device cuda:1
+```
+
+```bash
+cd /path/to/inter-nav-project
+conda activate semexp
+export QWEN3_PYTHON="$(which python)"
 
 $QWEN3_PYTHON grutopia/demo/serve_semantic_perception.py mobile-sam \
   --host 127.0.0.1 --port 12183 --device cuda:1 \
   --mobile-sam-checkpoint grutopia/assets/models/mobile_sam.pt
 ```
 
-If the services are down, exploration still runs with Isaac semantic labels.
-If Qwen3 fails to start, frontier ranking falls back to geometric scoring.
-
-## Reproduce `grscene_mv7_v26`
-
-From the repo root, with no display:
+Wait until each process prints that Flask is running. Optional check:
 
 ```bash
-export PYTHONPATH="$PWD"
-export QWEN3_PYTHON=/path/to/CapNav/bin/python
-
-mkdir -p grutopia/results/go2_semantic_exploration/grscene_mv7_v26
-
-$ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
-  --gpu 2 \
-  --perception-gpu 1 \
-  --qwen-device cuda:3 \
-  --target refrigerator \
-  --record-dir grutopia/results/go2_semantic_exploration/grscene_mv7_v26 \
-  --map-output grutopia/results/go2_semantic_exploration/grscene_mv7_v26/final_map
+curl -s http://127.0.0.1:12181/health
+curl -s http://127.0.0.1:12183/health
 ```
 
-`--gpu` / `--perception-gpu` / `--qwen-device` are machine-local. Pick free
-GPUs; the defaults in the script are only a starting point.
+If these services are down, exploration still runs with Isaac semantic labels.
+If Qwen3 fails to start, frontier ranking falls back to geometric scoring.
 
-The reference run finished successfully at step 2458:
+## 8. Run Go2 navigation
 
-- `success: true`
-- `target_query: refrigerator`
-- `target_match: lexical`
-- robot near `[9.30, -0.75, 0.52]`, fridge near `[10.53, -1.70, 1.01]`
+Third terminal, **Isaac** env, repo root. Use GPUs that are free on your
+machine. The flags below assume:
 
-Outputs in the record directory:
+- `--gpu 0`: Isaac Sim
+- `--perception-gpu 1`: CLIP inside the Isaac process (same GPU as the HTTP services is fine)
+- `--qwen-device cuda:2`: Qwen3-8B worker spawned by the demo
+
+```bash
+cd /path/to/inter-nav-project
+conda activate grutopia
+export PYTHONPATH="$PWD"
+export QWEN3_PYTHON=/path/to/miniconda3/envs/semexp/bin/python
+
+python grutopia/demo/go2_semantic_exploration.py \
+  --gpu 0 \
+  --perception-gpu 1 \
+  --qwen-device cuda:2 \
+  --target refrigerator \
+  --record-dir grutopia/results/go2_semantic_exploration \
+  --map-output grutopia/results/go2_semantic_exploration/final_map
+```
+
+On a machine with no display the script already defaults to `--headless`.
+Change `--target` to another object name, such as `chair` or `plant`.
+
+Geometry-only smoke test (no VLM services, no Qwen, one GPU):
+
+```bash
+python grutopia/demo/go2_semantic_exploration.py \
+  --gpu 0 --no-open-vocabulary --no-qwen --target refrigerator
+```
+
+An empty programmatic room is available with `--scene programmatic`.
+
+## 9. What success looks like
+
+The process prints JSON lines. A finished run ends with
+`semantic_exploration_result` and `"success": true` when Go2 reaches the
+matched target. Files under `--record-dir`:
 
 - `combined.mp4`, `robot_rgb.mp4`, `third_person.mp4`, `map_topdown.mp4`
 - matching `*_preview.png`
@@ -138,19 +235,15 @@ Outputs in the record directory:
 Offline checks that do not need Isaac:
 
 ```bash
-$ISAAC_PYTHON -m unittest discover -s tests -p 'test_*semantic*'
-$ISAAC_PYTHON -m unittest tests.test_go2_navigation_support tests.test_point_navigation_component
+conda activate grutopia
+export PYTHONPATH="$PWD"
 
-$ISAAC_PYTHON grutopia/demo/evaluate_semantic_exploration.py \
-  --map-prefix grutopia/results/go2_semantic_exploration/grscene_mv7_v26/final_map \
+python -m unittest discover -s tests -p 'test_*semantic*'
+python -m unittest tests.test_go2_navigation_support tests.test_point_navigation_component
+
+python grutopia/demo/evaluate_semantic_exploration.py \
+  --map-prefix grutopia/results/go2_semantic_exploration/final_map \
   --target-label refrigerator
-```
-
-Geometry-only smoke test:
-
-```bash
-$ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
-  --no-open-vocabulary --no-qwen --target refrigerator
 ```
 
 ## Architecture
@@ -162,6 +255,17 @@ $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
 3. `AdaptiveExplorationPlanner` ranks frontiers. A local Qwen3-8B worker may
    rerank the bounded topology JSON. The model never sends locomotion
    commands; A* and the Go2 RSL policy still move the robot.
+
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| `omni.isaac` import fails | Isaac Sim 4.2 is not sourced. `conda activate grutopia` after `./setup_conda.sh`, or use Isaac's `python.sh`. |
+| `GRScenes navigation USD not found` | `download_mv7_scene.py` did not finish. Confirm the `.usda` path in section 6. |
+| Go2 USD missing | Run `download_go2_asset.py` from the Isaac env, or copy `isaaclab_go2.usd` into `grutopia/assets/robots/go2/`. |
+| CUDA OOM | Give Isaac, the two HTTP services, and Qwen different GPUs. Or run `--no-qwen` / `--no-open-vocabulary`. |
+| Qwen worker never starts | `QWEN3_PYTHON` must be the `semexp` interpreter, not Isaac Python. |
+| No detections | GroundingDINO / MobileSAM not listening on `12181` / `12183`. |
 
 ## License
 
