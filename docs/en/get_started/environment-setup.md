@@ -1,7 +1,12 @@
 # Environment setup
 
-Follow the sections below in order. After the last step you can run the Go2
-demo in the [README](../../../README.md).
+If you are on this lab server and your account is in the `embodied` group,
+skip this page and use the shared conda, weights, and scenes:
+
+[lab-shared-environment.md](lab-shared-environment.md)
+
+Otherwise follow the sections below in order. After the last step you can run
+the Go2 demo in the [README](../../../README.md).
 
 ## 1. Hardware and software
 

@@ -4,7 +4,8 @@
 occupancy map until Go2 finds and approaches a text-described object or area.
 
 Install Isaac Sim, conda environments, and models with
-[environment-setup.md](environment-setup.md) first.
+[environment-setup.md](environment-setup.md) first. On this lab server, use
+[lab-shared-environment.md](lab-shared-environment.md) instead.
 
 ## Architecture
 
@@ -62,14 +63,30 @@ $ISAAC_PYTHON grutopia/demo/download_go2_policy.py
 Go2 starts on the official refrigerator path about 9.2 m away and explores
 until it reaches the real scanned fridge.
 
+On this lab server, `source /data20t/embodied/share/inter-nav/env.sh` already
+sets `ISAAC_PYTHON`, `QWEN3_PYTHON`, and `PYTHONPATH`. Do not set
+`CUDA_VISIBLE_DEVICES`.
+
+```bash
+$ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
+  --gpu 0 \
+  --perception-gpu 1 \
+  --qwen-device cuda:2 \
+  --target refrigerator \
+  --record-dir grutopia/results/go2_semantic_exploration \
+  --map-output grutopia/results/go2_semantic_exploration/final_map
+```
+
+On any other machine:
+
 ```bash
 export PYTHONPATH="$PWD"
 export QWEN3_PYTHON=/path/to/CapNav/bin/python
 
 $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
-  --gpu 2 \
+  --gpu 0 \
   --perception-gpu 1 \
-  --qwen-device cuda:3 \
+  --qwen-device cuda:2 \
   --target refrigerator \
   --record-dir grutopia/results/go2_semantic_exploration \
   --map-output grutopia/results/go2_semantic_exploration/final_map

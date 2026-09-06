@@ -10,13 +10,32 @@ a text target such as `refrigerator` and walks up to the scanned object.
 
 ## Environment setup
 
-Install Isaac Sim 4.2, the two conda environments, scene/robot assets, and
-perception services by following
+On this lab server, `embodied` members should clone the repo and use the
+shared conda / weights / scenes:
+
+[docs/en/get_started/lab-shared-environment.md](docs/en/get_started/lab-shared-environment.md)
+
+On any other machine, install Isaac Sim 4.2, the two conda environments,
+scene/robot assets, and perception services by following
 [docs/en/get_started/environment-setup.md](docs/en/get_started/environment-setup.md).
 
 ## Run Go2 navigation
 
-After that setup, from the repo root in the Isaac env:
+On this lab server, after `source /data20t/embodied/share/inter-nav/env.sh`:
+
+```bash
+$ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
+  --gpu 0 \
+  --perception-gpu 1 \
+  --qwen-device cuda:2 \
+  --target refrigerator \
+  --record-dir grutopia/results/go2_semantic_exploration \
+  --map-output grutopia/results/go2_semantic_exploration/final_map
+```
+
+Do not set `CUDA_VISIBLE_DEVICES`. Use `$ISAAC_PYTHON`, not `python`.
+
+On any other machine, from the repo root in the Isaac env:
 
 ```bash
 export PYTHONPATH="$PWD"
