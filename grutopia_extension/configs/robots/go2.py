@@ -78,3 +78,4 @@ class Go2RobotCfg(RobotCfg):
     create_robot: Optional[bool] = True
     usd_path: Optional[str] = DEFAULT_GO2_USD_PATH
     generate_fallback_asset: bool = True
+#test why change
