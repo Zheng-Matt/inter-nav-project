@@ -271,7 +271,9 @@ class MapNavigationRuntime:
             # target classes (e.g. refrigerator) from the scene graph whenever
             # GroundingDINO returned any context detection, so lexical target
             # matching could never fire.
-            return tuple(semantic_detections) + fallback
+            return _deduplicate_semantic_detections(
+                tuple(semantic_detections) + fallback
+            )
         except Exception:
             self.open_vocabulary_failures += 1
             return fallback
@@ -990,6 +992,56 @@ def _semantic_detections(camera: dict, point_image) -> list:
             )
         )
     return detections
+
+
+def _deduplicate_semantic_detections(detections) -> tuple:
+    """Fuse duplicate observations produced by multiple sources in one frame."""
+
+    merged = []
+    for detection in detections:
+        match_index = None
+        incoming_embedding = detection.embedding
+        for index, candidate in enumerate(merged):
+            distance = float(
+                np.linalg.norm(
+                    np.asarray(candidate.position[:2], dtype=np.float64)
+                    - np.asarray(detection.position[:2], dtype=np.float64)
+                )
+            )
+            if distance >= 0.75:
+                continue
+            same_label = candidate.label.strip().casefold() == detection.label.strip().casefold()
+            similar_embedding = False
+            if candidate.embedding is not None and incoming_embedding is not None:
+                left = np.asarray(candidate.embedding, dtype=np.float64)
+                right = np.asarray(incoming_embedding, dtype=np.float64)
+                if left.shape == right.shape and left.size:
+                    denominator = float(np.linalg.norm(left) * np.linalg.norm(right))
+                    similar_embedding = denominator > 1e-12 and float(np.dot(left, right) / denominator) >= 0.86
+            if same_label or similar_embedding:
+                match_index = index
+                break
+        if match_index is None:
+            merged.append(detection)
+            continue
+
+        previous = merged[match_index]
+        # Prefer the geometrically denser observation, while retaining
+        # complementary appearance information from either source.
+        geometry = detection if detection.point_count > previous.point_count else previous
+        appearance = detection if detection.embedding is not None else previous
+        color_source = detection if detection.color is not None else previous
+        label_source = detection if detection.confidence > previous.confidence else previous
+        merged[match_index] = SemanticDetection(
+            label=label_source.label,
+            position=geometry.position,
+            color=color_source.color,
+            confidence=max(float(previous.confidence), float(detection.confidence)),
+            embedding=appearance.embedding,
+            point_count=max(int(previous.point_count), int(detection.point_count)),
+            step=max(int(previous.step), int(detection.step)),
+        )
+    return tuple(merged)
 
 
 def _semantic_category(label) -> str:

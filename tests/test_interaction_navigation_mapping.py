@@ -14,6 +14,7 @@ from grutopia_extension.interactive_navigation.mapping import (
 from grutopia_extension.interactive_navigation.mapping_runtime import (
     MapNavigationRuntime,
     _camera_cloud,
+    _deduplicate_semantic_detections,
     _semantic_detections,
 )
 from grutopia_extension.interactive_navigation.state_machine import (
@@ -24,6 +25,22 @@ from grutopia_extension.interactive_navigation.state_machine import (
 
 
 class InteractionNavigationMappingTest(unittest.TestCase):
+    def test_same_frame_semantic_sources_are_deduplicated(self):
+        detections = _deduplicate_semantic_detections(
+            (
+                SemanticDetection('chair', (1.0, 1.0, 0.5), confidence=0.8, embedding=(1.0, 0.0), point_count=20, step=7),
+                SemanticDetection('chair', (1.1, 1.0, 0.5), confidence=1.0, color=(10, 20, 30), step=7),
+            )
+        )
+
+        self.assertEqual(len(detections), 1)
+        self.assertEqual(detections[0].position, (1.0, 1.0, 0.5))
+        self.assertEqual(detections[0].embedding, (1.0, 0.0))
+        self.assertEqual(detections[0].color, (10, 20, 30))
+        graph = SceneGraphMap(MappingConfig())
+        graph.update_detections(detections)
+        self.assertEqual(graph.object_nodes()[0].observations, 1)
+
     def test_voxel_map_fuses_lidar_geometry_and_rgb_color(self):
         config = MappingConfig(voxel_size=0.2)
         voxel_map = VoxelPointCloudMap(config)
