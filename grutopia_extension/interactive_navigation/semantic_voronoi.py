@@ -639,10 +639,11 @@ class SemanticVoronoiGraph:
         for obj in sorted(self._semantics.values(), key=lambda item: item.node_id):
             xy = (float(obj.position[0]), float(obj.position[1]))
             cell = self.occupancy.world_to_cell(xy)
-            candidates = list(nodes)
-            if cell is not None and labels[cell] >= 0:
-                reachable = [node for node in nodes if labels[node.cell] == labels[cell]]
-                candidates = reachable or candidates
+            candidates: List[VoronoiNode] = []
+            if cell is not None:
+                anchor = cell if labels[cell] >= 0 else _nearest_true_cell(cell, traversable)
+                if anchor is not None and labels[anchor] >= 0:
+                    candidates = [node for node in nodes if labels[node.cell] == labels[anchor]]
             nearest = _nearest_node(xy, candidates)
             attachments.append(
                 SemanticAttachment(
@@ -846,10 +847,10 @@ class SemanticVoronoiGraph:
 
         region_ids = tuple(sorted(region_index, key=lambda region_id: region_index[region_id]))
         if _ndimage is None or not skeleton.any():
-            assigned = np.where(traversable, skeleton_region, -1)
+            assigned = _propagate_region_labels(skeleton_region, traversable)
             self._last_region_assignment = (assigned.astype(np.int32), region_ids)
             counts = np.bincount(
-                skeleton_region[skeleton_region >= 0].reshape(-1),
+                assigned[assigned >= 0].reshape(-1),
                 minlength=len(region_index),
             )
             return {region_id: float(counts[index] * cell_area) for region_id, index in region_index.items()}
@@ -1215,6 +1216,37 @@ def _component_labels(mask: np.ndarray) -> np.ndarray:
         for cell in group:
             labels[cell] = label
     return labels
+
+
+def _nearest_true_cell(origin: GridCell, mask: np.ndarray) -> Optional[GridCell]:
+    """Return the nearest true cell without silently crossing map bounds."""
+
+    if mask[origin]:
+        return origin
+    rows, cols = np.nonzero(mask)
+    if not len(rows):
+        return None
+    distances = (rows - origin[0]) ** 2 + (cols - origin[1]) ** 2
+    index = int(np.argmin(distances))
+    return int(rows[index]), int(cols[index])
+
+
+def _propagate_region_labels(seeds: np.ndarray, traversable: np.ndarray) -> np.ndarray:
+    """Assign every reachable free cell to a seeded region without SciPy."""
+
+    assigned = np.where(traversable, seeds, -1).astype(np.int32)
+    queue = deque(tuple(int(value) for value in cell) for cell in np.argwhere(assigned >= 0))
+    while queue:
+        row, col = queue.popleft()
+        for neighbor in _all_neighbors((row, col)):
+            nr, nc = neighbor
+            if not (0 <= nr < assigned.shape[0] and 0 <= nc < assigned.shape[1]):
+                continue
+            if not traversable[neighbor] or assigned[neighbor] >= 0:
+                continue
+            assigned[neighbor] = assigned[row, col]
+            queue.append(neighbor)
+    return assigned
 
 
 def _all_neighbors(cell: GridCell) -> Iterable[GridCell]:

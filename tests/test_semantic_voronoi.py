@@ -130,6 +130,23 @@ class SemanticVoronoiTest(unittest.TestCase):
         self.assertLess(attachments[0].distance, 0.5)
         self.assertEqual(graph.snapshot().semantics, attachments)
 
+    def test_semantic_object_outside_free_space_does_not_bind_across_components(self):
+        occupancy = _occupancy()
+        occupancy.observed[5:10, 3:15] = True
+        occupancy.observed[20:25, 25:38] = True
+        graph = SemanticVoronoiGraph(occupancy, SemanticVoronoiConfig(spur_length=0.0))
+        obj = SceneGraphNode(
+            node_id='object:outside:0',
+            kind='object',
+            position=(-1.0, -1.0, 0.5),
+            label='chair',
+        )
+
+        attachment = graph.attach_semantics([obj])[0]
+
+        self.assertIsNone(attachment.node_id)
+        self.assertIsNone(attachment.distance)
+
     def test_forced_update_drops_stale_skeleton_cells_after_new_inflation(self):
         occupancy = _occupancy()
         occupancy.observed.fill(True)
