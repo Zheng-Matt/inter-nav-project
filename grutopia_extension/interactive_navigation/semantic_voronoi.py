@@ -142,6 +142,7 @@ class SemanticVoronoiSnapshot:
 class _MutableStatistics:
     builds: int = 0
     cache_hits: int = 0
+    unchanged_updates: int = 0
     incremental_updates: int = 0
     incremental_fallbacks: int = 0
     last_changed_cells: int = 0
@@ -204,7 +205,37 @@ class SemanticVoronoiGraph:
         observed = np.asarray(self.occupancy.observed, dtype=bool).copy()
         traversable = observed & ~inflated
         resolution = float(self.occupancy.config.grid_resolution)
-        clearance = _distance_to_false(traversable) * resolution
+
+        traversable_unchanged = (
+            self._snapshot is not None
+            and self._last_traversable is not None
+            and np.array_equal(traversable, self._last_traversable)
+        )
+        observed_unchanged = (
+            self._last_observed is not None
+            and np.array_equal(observed, self._last_observed)
+        )
+        if traversable_unchanged and observed_unchanged and not force:
+            self._stats.last_changed_cells = 0
+            self._stats.last_window_cells = 0
+            self._stats.unchanged_updates += 1
+            self._snapshot = SemanticVoronoiSnapshot(
+                revision=int(self.occupancy.revision),
+                nodes=self._snapshot.nodes,
+                edges=self._snapshot.edges,
+                frontiers=self._snapshot.frontiers,
+                semantics=self._snapshot.semantics,
+                skeleton_cells=self._snapshot.skeleton_cells,
+                regions=self._snapshot.regions,
+                doorways=self._snapshot.doorways,
+            )
+            return self._snapshot
+
+        clearance = (
+            self._last_clearance
+            if traversable_unchanged and self._last_clearance is not None
+            else _distance_to_false(traversable) * resolution
+        )
 
         skeleton: Optional[np.ndarray] = None
         can_increment = (
@@ -221,11 +252,15 @@ class SemanticVoronoiGraph:
                 observed != self._last_observed if self._last_observed is not None else np.ones_like(observed)
             )
             self._stats.last_changed_cells = int((changed | observed_changed).sum())
-            skeleton = self._incremental_skeleton(traversable, clearance, changed, resolution)
-            if skeleton is not None:
-                self._stats.incremental_updates += 1
+            if not changed.any():
+                skeleton = self._last_skeleton
+                self._stats.unchanged_updates += 1
             else:
-                self._stats.incremental_fallbacks += 1
+                skeleton = self._incremental_skeleton(traversable, clearance, changed, resolution)
+                if skeleton is not None:
+                    self._stats.incremental_updates += 1
+                else:
+                    self._stats.incremental_fallbacks += 1
         elif changed_hint:
             self._stats.last_changed_cells = len(changed_hint)
 
@@ -235,11 +270,7 @@ class SemanticVoronoiGraph:
 
         # When the traversable mask is unchanged the clearance field and the
         # skeleton are unchanged too, so the compressed graph can be reused.
-        reuse_graph = (
-            self._snapshot is not None
-            and self._last_traversable is not None
-            and np.array_equal(traversable, self._last_traversable)
-        )
+        reuse_graph = traversable_unchanged
         if reuse_graph:
             nodes: List[VoronoiNode] = list(self._snapshot.nodes)
             edges: List[VoronoiEdge] = list(self._snapshot.edges)

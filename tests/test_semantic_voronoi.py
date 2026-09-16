@@ -162,7 +162,8 @@ class SemanticVoronoiTest(unittest.TestCase):
 
         self.assertIsNot(first, rebuilt)
         self.assertEqual(first_ids, {node.node_id for node in rebuilt.nodes})
-        self.assertEqual(graph.statistics()['incremental_updates'], 1)
+        self.assertEqual(graph.statistics()['unchanged_updates'], 1)
+        self.assertEqual(graph.statistics()['incremental_updates'], 0)
         self.assertGreaterEqual(graph.statistics()['cache_hits'], 1)
         payload = graph.to_dict()
         self.assertEqual(payload['revision'], occupancy.revision)
@@ -213,7 +214,8 @@ class SemanticVoronoiTest(unittest.TestCase):
         refreshed = graph.update()
 
         self.assertEqual(graph.statistics()['builds'], 1)
-        self.assertEqual(graph.statistics()['incremental_updates'], 1)
+        self.assertEqual(graph.statistics()['unchanged_updates'], 1)
+        self.assertEqual(graph.statistics()['incremental_updates'], 0)
         self.assertEqual(refreshed.revision, occupancy.revision)
         self.assertEqual(first.nodes, refreshed.nodes)
         self.assertEqual(first.edges, refreshed.edges)
