@@ -159,11 +159,55 @@ class OpenVocabularyPerceptionTest(unittest.TestCase):
         )
         perception.perceive(self.rgba, self.depth, self.point_image, 'mug')
         now[0] += 0.5
-        perception.perceive(self.rgba, self.depth, self.point_image, 'mug')
+        skipped = perception.perceive(self.rgba, self.depth, self.point_image, 'mug')
         now[0] += 0.6
         perception.perceive(self.rgba, self.depth, self.point_image, 'mug')
 
         self.assertEqual(len(detector_calls), 2)
+        self.assertEqual(skipped, [])
+
+    def test_rate_limit_does_not_replay_stale_world_position(self):
+        now = [10.0]
+        mask = np.ones((3, 4), dtype=bool)
+        perception = OpenVocabularyPerception(
+            OpenVocabularyPerceptionConfig(query_interval=1.0),
+            detector=lambda image, query: [
+                {'label': 'chair', 'confidence': 0.9, 'bbox': [0, 0, 4, 3]}
+            ],
+            segmenter=lambda image, bbox: mask,
+            embedder=lambda crop: np.ones(2),
+            clock=lambda: now[0],
+        )
+
+        first = perception.perceive(
+            self.rgba,
+            self.depth,
+            self.point_image,
+            'chair',
+            step=4,
+        )
+        now[0] += 0.5
+        moved_points = self.point_image + np.asarray((20.0, 0.0, 0.0))
+        second = perception.perceive(
+            self.rgba,
+            self.depth,
+            moved_points,
+            'chair',
+            step=5,
+        )
+
+        self.assertEqual(len(first), 1)
+        self.assertEqual(second, [])
+
+    def test_service_failure_without_fallback_is_observable(self):
+        perception = OpenVocabularyPerception(
+            detector=lambda _image, _query: (_ for _ in ()).throw(requests.Timeout('offline')),
+            segmenter=lambda image, bbox: np.ones(image.shape[:2], dtype=bool),
+            embedder=lambda crop: np.ones(2),
+        )
+
+        with self.assertRaises(requests.Timeout):
+            perception.perceive(self.rgba, self.depth, self.point_image, 'door')
 
 
 if __name__ == '__main__':

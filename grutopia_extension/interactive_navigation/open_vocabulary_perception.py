@@ -191,14 +191,19 @@ class OpenVocabularyPerception:
         query = self.build_query(target, include_context=include_context)
         now = self._clock()
         if query == self._last_query and now - self._last_query_time < self.config.query_interval:
-            return list(self._last_result)
+            # A materialized detection contains geometry from a particular
+            # RGB/depth frame. Replaying it would submit a stale world-space
+            # centroid as a new observation when either the camera or object
+            # has moved. Rate limiting therefore skips this frame instead of
+            # caching three-dimensional observations.
+            return []
 
         try:
             detections = self._run_detector(rgb, query)
             result = self._materialize(detections, rgb, depth_array, points, step=step)
         except Exception:
             if self.simulator_fallback is None:
-                result = []
+                raise
             else:
                 result = list(
                     self.simulator_fallback(
