@@ -71,6 +71,9 @@ and writes to `--record-dir`:
 - `final_map.json` (Voronoi graph, decisions, trajectory)
 - `final_map.npz` (occupancy layers and skeleton)
 
+For staged offline, geometry-only, and fused semantic validation, follow the
+[navigation and semantic regression test plan](docs/navigation-semantic-regression-test-plan.md).
+
 ## Architecture
 
 1. `SemanticVoronoiGraph` builds a safe medial-axis skeleton on observed free
