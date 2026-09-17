@@ -28,8 +28,23 @@ class InteractionNavigationMappingTest(unittest.TestCase):
     def test_same_frame_semantic_sources_are_deduplicated(self):
         detections = _deduplicate_semantic_detections(
             (
-                SemanticDetection('chair', (1.0, 1.0, 0.5), confidence=0.8, embedding=(1.0, 0.0), point_count=20, step=7),
-                SemanticDetection('chair', (1.1, 1.0, 0.5), confidence=1.0, color=(10, 20, 30), step=7),
+                SemanticDetection(
+                    'chair',
+                    (1.0, 1.0, 0.5),
+                    confidence=0.8,
+                    embedding=(1.0, 0.0),
+                    point_count=20,
+                    step=7,
+                    sources=('open_vocabulary',),
+                ),
+                SemanticDetection(
+                    'chair',
+                    (1.1, 1.0, 0.5),
+                    confidence=1.0,
+                    color=(10, 20, 30),
+                    step=7,
+                    sources=('isaac',),
+                ),
             )
         )
 
@@ -37,9 +52,11 @@ class InteractionNavigationMappingTest(unittest.TestCase):
         self.assertEqual(detections[0].position, (1.0, 1.0, 0.5))
         self.assertEqual(detections[0].embedding, (1.0, 0.0))
         self.assertEqual(detections[0].color, (10, 20, 30))
+        self.assertEqual(detections[0].sources, ('open_vocabulary', 'isaac'))
         graph = SceneGraphMap(MappingConfig())
         graph.update_detections(detections)
         self.assertEqual(graph.object_nodes()[0].observations, 1)
+        self.assertEqual(graph.object_nodes()[0].sources, ('open_vocabulary', 'isaac'))
 
     def test_voxel_map_fuses_lidar_geometry_and_rgb_color(self):
         config = MappingConfig(voxel_size=0.2)
@@ -426,13 +443,15 @@ class InteractionNavigationMappingTest(unittest.TestCase):
         }
 
         points, colors, point_image = _camera_cloud(camera)
-        detections = _semantic_detections(camera, point_image)
+        detections = _semantic_detections(camera, point_image, step=17)
 
         self.assertEqual(points.shape, (3, 3))
         self.assertEqual(colors.shape, (3, 3))
         self.assertEqual(len(detections), 1)
         self.assertEqual(detections[0].label, 'obstacle')
         self.assertGreater(detections[0].color[0], 200)
+        self.assertEqual(detections[0].step, 17)
+        self.assertEqual(detections[0].sources, ('isaac',))
 
     def test_scene_graph_ignores_floor_and_robot_semantic_boxes(self):
         camera = {
@@ -551,6 +570,10 @@ class InteractionNavigationMappingTest(unittest.TestCase):
 
         labels = sorted(node.label for node in runtime.map.scene_graph.object_nodes())
         self.assertEqual(labels, ['obstacle', 'refrigerator'])
+        refrigerator = next(
+            node for node in runtime.map.scene_graph.object_nodes() if node.label == 'refrigerator'
+        )
+        self.assertEqual(refrigerator.sources, ('open_vocabulary',))
         self.assertEqual(runtime.open_vocabulary_frames, 1)
 
     def test_rgb_depth_endpoints_add_obstacles_without_clearing_rays(self):

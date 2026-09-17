@@ -59,6 +59,32 @@ class PointNavigationComponentTest(unittest.TestCase):
         component.mapping.map.occupancy.mark_occupied((1.0, 0.0), radius=0.2, evidence=4.0)
         component.action(4, observation())
         self.assertEqual(component.mapping.replan_count, 1)
+        self.assertEqual(component.mapping.replan_reasons, {'blocked': 1})
+
+    def test_changed_goal_replans_even_when_navigation_state_is_unchanged(self):
+        component = PointNavigationComponent(self.config())
+        component.mapping.map.lidar_frames = 1
+        component.mapping.map.occupancy.observed.fill(True)
+        robot = observation()
+
+        component.mapping.point_navigation_action((2.0, 0.0, 0.8), robot, step=0)
+        component.mapping.point_navigation_action((3.0, 1.0, 0.8), robot, step=1)
+
+        self.assertEqual(component.mapping.map.plan_count, 2)
+        self.assertEqual(component.mapping.replan_reasons, {'goal_changed': 1})
+        np.testing.assert_allclose(component.mapping._planned_path[-1], (3.0, 1.0, 0.8))
+        self.assertEqual(component.mapping._plan_history[-1]['reason'], 'goal_changed')
+
+    def test_zero_length_path_segment_does_not_hide_later_blockage(self):
+        component = PointNavigationComponent(self.config())
+        runtime = component.mapping
+        runtime.map.occupancy.observed.fill(True)
+        start = (0.0, 0.0, 0.8)
+        runtime._planned_path = (start, (1.0, 0.0, 0.8))
+        runtime.map.occupancy.mark_occupied((1.0, 0.0), radius=0.1, evidence=4.0)
+
+        self.assertTrue(runtime._remaining_path_blocked(start))
+        self.assertEqual(runtime._last_path_blockage['reason'], 'inflated_occupancy')
 
     def test_success_fall_and_timeout_are_distinct_terminal_results(self):
         success = PointNavigationComponent(self.config()).evaluate(0, observation((1.8, 0.0, 0.8)))

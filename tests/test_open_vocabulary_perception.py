@@ -69,6 +69,7 @@ class OpenVocabularyPerceptionTest(unittest.TestCase):
         self.assertEqual(semantic.confidence, 0.8)
         self.assertEqual(semantic.point_count, 2)
         self.assertEqual(semantic.step, 7)
+        self.assertEqual(semantic.sources, ('open_vocabulary',))
         np.testing.assert_allclose(semantic.embedding, (0.6, 0.8))
 
     def test_embedding_uses_tight_masked_crop_and_l2_normalizes(self):

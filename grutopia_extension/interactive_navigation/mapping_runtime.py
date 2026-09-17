@@ -1,7 +1,7 @@
 """Runtime glue from GRUtopia sensor observations to the fused map."""
 
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from math import atan2, cos, pi, sin
 from pathlib import Path
 from typing import Iterable, Optional
@@ -105,11 +105,15 @@ class MapNavigationRuntime:
         self._last_lidar_physics_step = -1
         self._planned_state: Optional[InteractionState] = None
         self._planned_path = None
+        self._planned_goal = None
         self._waypoint_index = 0
         self._planned_paths = {}
         self._plan_history = []
         self.planning_failures = 0
         self.replan_count = 0
+        self.replan_reasons = {}
+        self.last_replan = None
+        self._last_path_blockage = None
         self._progress_position = None
         self._progress_step = None
         self._last_plan_step = None
@@ -248,7 +252,7 @@ class MapNavigationRuntime:
                 )
 
     def _camera_semantic_detections(self, camera: dict, point_image, step: int):
-        fallback = tuple(_semantic_detections(camera, point_image))
+        fallback = tuple(_semantic_detections(camera, point_image, step=step))
         if self.open_vocabulary_perception is None or not self.semantic_target:
             return fallback
         try:
@@ -262,7 +266,11 @@ class MapNavigationRuntime:
             semantic_detections = []
             for detection in detections:
                 if isinstance(detection, SemanticDetection):
-                    semantic_detections.append(detection)
+                    semantic_detections.append(
+                        detection
+                        if detection.sources
+                        else replace(detection, sources=('open_vocabulary',))
+                    )
                 elif hasattr(detection, 'to_semantic_detection'):
                     semantic_detections.append(detection.to_semantic_detection())
             self.open_vocabulary_frames += 1
@@ -318,6 +326,7 @@ class MapNavigationRuntime:
             )
             self._planned_state = None
             self._planned_path = None
+            self._planned_goal = None
             self._waypoint_index = 0
             return ControllerCommand(command.name, (recover_target, command.data[1])).as_action()
         if decision.state == InteractionState.PUSH_DOOR and 'move_by_speed' in action:
@@ -330,6 +339,7 @@ class MapNavigationRuntime:
         if command is None or command.name != 'move_along_path':
             self._planned_state = None
             self._planned_path = None
+            self._planned_goal = None
             self._waypoint_index = 0
             self._progress_position = None
             self._progress_step = None
@@ -357,6 +367,7 @@ class MapNavigationRuntime:
                 step,
             )
         goal = tuple(float(value) for value in configured_path[-1])
+        plan_reason = None
         if (
             decision.state == InteractionState.NAVIGATE_TO_OBJECT
             and np.linalg.norm(np.asarray(start[:2]) - np.asarray(goal[:2]))
@@ -368,10 +379,27 @@ class MapNavigationRuntime:
                 tuple(self._aligned_speed_data(0.0, robot_observation['orientation'])),
             ).as_action()
         if self._planned_state != decision.state:
+            plan_reason = 'initial' if self._planned_state is None else 'state_changed'
             self._planned_path = None
+            self._planned_goal = None
             self._progress_position = np.asarray(start[:2])
             self._progress_step = step
             self._last_plan_step = None
+            self._last_blocked_replan_step = None
+        elif (
+            self._planned_path is not None
+            and self._planned_goal is not None
+            and np.linalg.norm(
+                np.asarray(goal[:2], dtype=np.float64)
+                - np.asarray(self._planned_goal[:2], dtype=np.float64)
+            )
+            > self.map.config.grid_resolution * 0.5
+        ):
+            self._record_replan('goal_changed', step, start)
+            self._progress_position = np.asarray(start[:2])
+            self._progress_step = step
+            self._last_blocked_replan_step = None
+            plan_reason = 'goal_changed'
         elif (
             step is not None
             and self.replan_only_if_blocked
@@ -387,9 +415,8 @@ class MapNavigationRuntime:
             # waiting for the periodic replan timer gave a blind window of
             # ~0.5 m at walking speed and led to a near-collision pass.
             self._last_blocked_replan_step = step
-            self._planned_path = None
-            self._waypoint_index = 0
-            self.replan_count += 1
+            self._record_replan('blocked', step, start)
+            plan_reason = 'blocked'
         elif (
             step is not None
             and self.replan_interval_steps is not None
@@ -399,15 +426,13 @@ class MapNavigationRuntime:
             if self.replan_only_if_blocked and not self._remaining_path_blocked(start):
                 self._last_plan_step = step
             else:
-                self._planned_path = None
-                self._waypoint_index = 0
-                self.replan_count += 1
+                plan_reason = 'periodic_blocked' if self.replan_only_if_blocked else 'periodic'
+                self._record_replan(plan_reason, step, start)
         elif step is not None and self._progress_step is not None and step - self._progress_step >= 240:
             current_position = np.asarray(start[:2])
             if np.linalg.norm(current_position - self._progress_position) < 0.12:
-                self._planned_path = None
-                self._waypoint_index = 0
-                self.replan_count += 1
+                self._record_replan('stalled', step, start)
+                plan_reason = 'stalled'
             self._progress_position = current_position
             self._progress_step = step
 
@@ -430,6 +455,7 @@ class MapNavigationRuntime:
                 self.planning_failures += 1
                 return ControllerCommand('move_by_speed', (0.0, 0.0, 0.0)).as_action()
             self._planned_state = decision.state
+            self._planned_goal = goal
             self._waypoint_index = 0
             self._last_plan_step = step
             self._planned_paths[decision.state.value] = self._planned_path
@@ -437,6 +463,8 @@ class MapNavigationRuntime:
                 {
                     'step': step,
                     'state': decision.state.value,
+                    'reason': plan_reason or 'initial',
+                    'goal': list(goal),
                     'path': [list(point) for point in self._planned_path],
                 }
             )
@@ -457,6 +485,7 @@ class MapNavigationRuntime:
         if self._planned_state != state or self._planned_path != path:
             self._planned_state = state
             self._planned_path = path
+            self._planned_goal = path[-1]
             self._waypoint_index = 0
             self._last_plan_step = step
             self._planned_paths[state.value] = path
@@ -484,8 +513,11 @@ class MapNavigationRuntime:
 
     def _remaining_path_blocked(self, start) -> bool:
         if not self._planned_path:
+            self._last_path_blockage = {'reason': 'missing_path'}
             return True
         blocked = self.map.occupancy.inflated_mask()
+        start_cell = self.map.occupancy.world_to_cell(start[:2])
+        start_blocked = start_cell is None or bool(blocked[start_cell])
         points = [np.asarray(start[:2], dtype=np.float64)]
         points.extend(
             np.asarray(point[:2], dtype=np.float64)
@@ -493,22 +525,50 @@ class MapNavigationRuntime:
         )
         spacing = self.map.config.grid_resolution * 0.5
         remaining = self.replan_lookahead_distance
-        for left, right in zip(points, points[1:]):
+        checked_total = 0.0
+        self._last_path_blockage = None
+        for segment_index, (left, right) in enumerate(zip(points, points[1:])):
             distance = float(np.linalg.norm(right - left))
             checked_distance = distance if remaining is None else min(distance, remaining)
             if checked_distance <= 0:
-                return False
+                continue
             endpoint = left if distance == 0 else left + (right - left) * (checked_distance / distance)
             samples = max(1, int(np.ceil(checked_distance / spacing)))
             for ratio in np.linspace(0.0, 1.0, samples + 1)[1:]:
                 cell = self.map.occupancy.world_to_cell(left + (endpoint - left) * ratio)
                 if cell is None or blocked[cell]:
+                    self._last_path_blockage = {
+                        'reason': 'outside_map' if cell is None else 'inflated_occupancy',
+                        'segment_index': segment_index,
+                        'cell': None if cell is None else list(cell),
+                        'distance_along_path': checked_total + checked_distance * float(ratio),
+                        'start_cell_blocked': start_blocked,
+                    }
                     return True
+            checked_total += checked_distance
             if remaining is not None:
                 remaining -= checked_distance
                 if remaining <= 0:
                     return False
         return False
+
+    def _record_replan(self, reason: str, step: Optional[int], start):
+        previous_goal = self._planned_goal
+        previous_waypoint_index = self._waypoint_index
+        self._planned_path = None
+        self._planned_goal = None
+        self._waypoint_index = 0
+        self.replan_count += 1
+        self.replan_reasons[reason] = self.replan_reasons.get(reason, 0) + 1
+        self.last_replan = {
+            'step': step,
+            'reason': reason,
+            'position': list(start),
+            'previous_goal': None if previous_goal is None else list(previous_goal),
+            'previous_waypoint_index': previous_waypoint_index,
+            'map_revision': self.map.occupancy.revision,
+            'blockage': self._last_path_blockage if 'blocked' in reason else None,
+        }
 
     def velocity_action_for(
         self,
@@ -832,6 +892,8 @@ class MapNavigationRuntime:
             {
                 'planning_failures': self.planning_failures,
                 'replans': self.replan_count,
+                'replan_reasons': dict(sorted(self.replan_reasons.items())),
+                'last_replan': self.last_replan,
                 'planned_states': sorted(self._planned_paths),
                 'planned_waypoints': {
                     state: len(path) for state, path in sorted(self._planned_paths.items())
@@ -946,7 +1008,7 @@ def _camera_cloud(camera: dict):
     return points, colors, point_image
 
 
-def _semantic_detections(camera: dict, point_image) -> list:
+def _semantic_detections(camera: dict, point_image, step: int = 0) -> list:
     if point_image is None:
         return []
     bounding_boxes = camera.get('bounding_box_2d_tight')
@@ -989,6 +1051,8 @@ def _semantic_detections(camera: dict, point_image) -> list:
                 label=str(label),
                 position=tuple(float(value) for value in position),
                 color=tuple(int(value) for value in np.clip(color, 0, 255)),
+                step=int(step),
+                sources=('isaac',),
             )
         )
     return detections
@@ -1040,6 +1104,7 @@ def _deduplicate_semantic_detections(detections) -> tuple:
             embedding=appearance.embedding,
             point_count=max(int(previous.point_count), int(detection.point_count)),
             step=max(int(previous.step), int(detection.step)),
+            sources=tuple(dict.fromkeys((*previous.sources, *detection.sources))),
         )
     return tuple(merged)
 

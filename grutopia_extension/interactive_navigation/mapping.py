@@ -80,6 +80,7 @@ class SemanticDetection:
     embedding: Optional[Tuple[float, ...]] = None
     point_count: int = 1
     step: int = 0
+    sources: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -94,6 +95,7 @@ class SceneGraphNode:
     embedding: Optional[Tuple[float, ...]] = None
     point_count: int = 1
     last_seen_step: int = 0
+    sources: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -553,6 +555,7 @@ class SceneGraphMap:
                     embedding=embedding,
                     point_count=node.point_count + max(1, int(detection.point_count)),
                     last_seen_step=max(node.last_seen_step, int(detection.step)),
+                    sources=tuple(dict.fromkeys((*node.sources, *detection.sources))),
                 )
                 self._object_position_sums[node.node_id] = position_sum
             else:
@@ -567,6 +570,7 @@ class SceneGraphMap:
                     embedding=detection.embedding,
                     point_count=max(1, int(detection.point_count)),
                     last_seen_step=int(detection.step),
+                    sources=tuple(dict.fromkeys(detection.sources)),
                 )
                 self._object_position_sums[node_id] = np.asarray(detection.position, dtype=np.float64)
                 if detection.embedding is not None:

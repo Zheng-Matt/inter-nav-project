@@ -100,14 +100,26 @@ class SemanticExplorationComponentTest(unittest.TestCase):
 
         component.mapping.map.scene_graph.update_detections(
             [
-                SemanticDetection('refrigerator', (4.0, 2.5, 0.8), confidence=0.9),
-                SemanticDetection('refrigerator', (4.0, 2.5, 0.8), confidence=0.9),
+                SemanticDetection(
+                    'refrigerator',
+                    (4.0, 2.5, 0.8),
+                    confidence=0.9,
+                    sources=('isaac',),
+                ),
+                SemanticDetection(
+                    'refrigerator',
+                    (4.0, 2.5, 0.8),
+                    confidence=0.9,
+                    sources=('isaac',),
+                ),
             ]
         )
         component.update(1, observation)
 
         self.assertEqual(component.target_node.label, 'refrigerator')
         self.assertEqual(component.statistics()['target_match'], 'lexical')
+        self.assertEqual(component.statistics()['target_match_method'], 'lexical')
+        self.assertEqual(component.statistics()['target_sources'], ['isaac'])
         self.assertIsNotNone(component.current_goal)
 
     def test_lexical_target_upgrades_only_to_strictly_better_node(self):

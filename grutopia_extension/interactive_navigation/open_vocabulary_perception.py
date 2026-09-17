@@ -77,6 +77,7 @@ class OpenVocabularyDetection:
             embedding=embedding,
             point_count=max(1, int(self.point_count)),
             step=int(self.step),
+            sources=('open_vocabulary',),
         )
 
 

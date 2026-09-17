@@ -329,6 +329,14 @@ class SemanticExplorationComponent:
                     if self.target_node is None
                     else ('lexical' if self._target_lexical else 'embedding')
                 ),
+                'target_match_method': (
+                    None
+                    if self.target_node is None
+                    else ('lexical' if self._target_lexical else 'embedding')
+                ),
+                'target_sources': (
+                    [] if self.target_node is None else list(self.target_node.sources)
+                ),
                 'active_frontier': self.current_frontier_id,
                 'active_goal': None if self.current_goal is None else list(self.current_goal),
                 'exploration_decisions': len(self.decision_history),
