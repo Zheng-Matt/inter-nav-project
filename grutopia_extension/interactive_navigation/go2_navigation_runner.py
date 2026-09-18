@@ -28,6 +28,9 @@ from grutopia_extension.configs.tasks import (
 from grutopia_extension.interactive_navigation.scene_paths import (
     configure_scene_mdl_paths,
 )
+from grutopia_extension.interactive_navigation.mapping_runtime import (
+    SemanticDetectionMode,
+)
 from grutopia_extension.interactive_navigation.navigation_recording import (
     NavigationRecordingSession,
 )
@@ -105,7 +108,9 @@ class Go2SemanticExplorationRunConfig:
     robot_usd_path: str = DEFAULT_GO2_USD_PATH
     generate_fallback_asset: bool = True
     ground_height: float = 0.0
-    enable_open_vocabulary: bool = True
+    # 'isaac' (ground-truth labels only), 'open_vocab' (VLM detections only),
+    # or 'hybrid' (fused). See SemanticDetectionMode.
+    semantic_detection_mode: str = 'hybrid'
     enable_qwen: bool = True
     qwen_model: str = 'Qwen/Qwen3-8B'
     qwen_python: str = os.environ.get('QWEN3_PYTHON', 'python'),
@@ -123,6 +128,11 @@ class Go2SemanticExplorationRunConfig:
             raise ValueError('logging and recording intervals must be positive')
         if self.rendering_interval <= 0:
             raise ValueError('rendering_interval must be positive')
+        object.__setattr__(
+            self,
+            'semantic_detection_mode',
+            SemanticDetectionMode.parse(self.semantic_detection_mode).value,
+        )
 
 
 def build_go2_navigation_config(
@@ -407,8 +417,9 @@ def run_go2_semantic_exploration(
         _label_go2_and_household_semantics(profile, active_robot.config.prim_path)
         _apply_high_friction_material('/World/env_0/objects/grscene_go2_floor')
 
+        detection_mode = SemanticDetectionMode.parse(run.semantic_detection_mode)
         perception = None
-        if run.enable_open_vocabulary:
+        if detection_mode.uses_open_vocabulary:
             perception = OpenVocabularyPerception(
                 OpenVocabularyPerceptionConfig(
                     clip_device=f'cuda:{run.perception_gpu}',
@@ -460,6 +471,7 @@ def run_go2_semantic_exploration(
                 safe_base_height=profile.safe_base_height,
                 max_forward_speed=profile.max_forward_speed,
                 max_lateral_speed=profile.max_lateral_speed,
+                semantic_detection_mode=detection_mode.value,
             ),
             perception=perception,
             scorer=scorer,

@@ -9,7 +9,10 @@ from typing import Optional, Tuple
 import numpy as np
 
 from grutopia_extension.interactive_navigation.mapping import MappingConfig, SceneGraphNode
-from grutopia_extension.interactive_navigation.mapping_runtime import MapNavigationRuntime
+from grutopia_extension.interactive_navigation.mapping_runtime import (
+    MapNavigationRuntime,
+    SemanticDetectionMode,
+)
 from grutopia_extension.interactive_navigation.semantic_exploration import (
     AdaptiveExplorationPlanner,
     ExplorationConfig,
@@ -35,6 +38,9 @@ class SemanticExplorationConfig:
     frontier_reached_distance: float = 0.45
     fall_height: float = 0.12
     safe_base_height: float = 0.22
+    # `isaac` = simulator ground-truth labels only, `open_vocab` = VLM
+    # detections only, `hybrid` = fused. See SemanticDetectionMode.
+    semantic_detection_mode: str = 'hybrid'
     target_min_observations: int = 2
     target_embedding_threshold: float = 0.24
     frontier_selection_interval: int = 160
@@ -47,6 +53,11 @@ class SemanticExplorationConfig:
     def __post_init__(self):
         if not self.target_query.strip():
             raise ValueError('target_query cannot be empty')
+        object.__setattr__(
+            self,
+            'semantic_detection_mode',
+            SemanticDetectionMode.parse(self.semantic_detection_mode).value,
+        )
         for name in (
             'max_steps',
             'target_min_observations',
@@ -112,6 +123,7 @@ class SemanticExplorationComponent:
             rgb_clears_free_space=False,
             semantic_target=config.target_query,
             open_vocabulary_perception=perception,
+            semantic_detection_mode=config.semantic_detection_mode,
             use_semantic_voronoi=True,
             semantic_voronoi_config=config.voronoi,
             topology_update_interval=config.topology_update_interval,

@@ -19,6 +19,9 @@ from grutopia_extension.interactive_navigation.go2_navigation_runner import (
     Go2SemanticExplorationRunConfig,
     run_go2_semantic_exploration,
 )
+from grutopia_extension.interactive_navigation.mapping_runtime import (
+    SemanticDetectionMode,
+)
 from grutopia_extension.interactive_navigation.point_navigation_profiles import (
     load_point_navigation_profile,
     programmatic_go2_profile,
@@ -59,9 +62,14 @@ def parse_args():
         default=not has_display(),
     )
     parser.add_argument(
-        '--open-vocabulary',
-        action=argparse.BooleanOptionalAction,
-        default=True,
+        '--detection-mode',
+        choices=tuple(mode.value for mode in SemanticDetectionMode),
+        default=SemanticDetectionMode.HYBRID.value,
+        help=(
+            'isaac: simulator ground-truth semantic labels only; '
+            'open_vocab: GroundingDINO + MobileSAM detections only; '
+            'hybrid: fuse both (default)'
+        ),
     )
     parser.add_argument(
         '--qwen',
@@ -187,7 +195,7 @@ def main():
             policy_path=args.policy_path,
             robot_usd_path=args.robot_usd,
             generate_fallback_asset=args.generate_fallback_asset,
-            enable_open_vocabulary=args.open_vocabulary,
+            semantic_detection_mode=args.detection_mode,
             enable_qwen=args.qwen,
             qwen_model=args.qwen_model,
             qwen_python=args.qwen_python,
