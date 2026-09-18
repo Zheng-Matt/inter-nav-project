@@ -2,6 +2,7 @@
 
 import json
 from dataclasses import asdict, replace
+from enum import Enum
 from math import atan2, cos, pi, sin
 from pathlib import Path
 from typing import Iterable, Optional
@@ -28,6 +29,56 @@ _NON_OBJECT_SEMANTIC_LABELS = {
 }
 
 
+_SEMANTIC_DETECTION_MODE_ALIASES = {
+    'isaac': 'ISAAC',
+    'gt': 'ISAAC',
+    'ground_truth': 'ISAAC',
+    'open_vocab': 'OPEN_VOCABULARY',
+    'open_vocabulary': 'OPEN_VOCABULARY',
+    'openvocab': 'OPEN_VOCABULARY',
+    'hybrid': 'HYBRID',
+    'fused': 'HYBRID',
+}
+
+
+class SemanticDetectionMode(str, Enum):
+    """Which perception source supplies object detections to the fused map.
+
+    ``isaac`` uses only the simulator's semantic bounding boxes, i.e. the
+    ground-truth labels of the scene. ``open_vocab`` uses only the
+    GroundingDINO/MobileSAM detections, which is what a real robot would see.
+    ``hybrid`` fuses both: a scene-graph node keeps every source that agreed
+    on it, and geometry comes from the denser observation.
+    """
+
+    ISAAC = 'isaac'
+    OPEN_VOCABULARY = 'open_vocab'
+    HYBRID = 'hybrid'
+
+    @classmethod
+    def parse(cls, value) -> 'SemanticDetectionMode':
+        """Normalize a CLI string or enum member into a member."""
+
+        if isinstance(value, cls):
+            return value
+        normalized = str(value).strip().casefold().replace('-', '_').replace(' ', '_')
+        try:
+            return cls[_SEMANTIC_DETECTION_MODE_ALIASES[normalized]]
+        except KeyError:
+            supported = ', '.join(mode.value for mode in cls)
+            raise ValueError(
+                f'unknown semantic detection mode {value!r}; expected one of {supported}'
+            ) from None
+
+    @property
+    def uses_isaac(self) -> bool:
+        return self is not SemanticDetectionMode.OPEN_VOCABULARY
+
+    @property
+    def uses_open_vocabulary(self) -> bool:
+        return self is not SemanticDetectionMode.ISAAC
+
+
 class MapNavigationRuntime:
     """Fuse live sensors and replace path commands with A* map plans."""
 
@@ -48,6 +99,7 @@ class MapNavigationRuntime:
         replan_lookahead_distance: Optional[float] = None,
         semantic_target: str = '',
         open_vocabulary_perception=None,
+        semantic_detection_mode=SemanticDetectionMode.HYBRID,
         use_semantic_voronoi: bool = False,
         semantic_voronoi_config=None,
         topology_update_interval: int = 40,
@@ -74,6 +126,18 @@ class MapNavigationRuntime:
         self.replan_lookahead_distance = replan_lookahead_distance
         self.semantic_target = str(semantic_target).strip()
         self.open_vocabulary_perception = open_vocabulary_perception
+        self.semantic_detection_mode = SemanticDetectionMode.parse(semantic_detection_mode)
+        if (
+            self.semantic_detection_mode is SemanticDetectionMode.OPEN_VOCABULARY
+            and open_vocabulary_perception is None
+        ):
+            # Hybrid degrades to Isaac-only when no perception is configured,
+            # but an explicit open-vocab request must not silently fall back to
+            # ground truth: that would corrupt a detection-quality comparison
+            # with labels only the simulator can provide.
+            raise ValueError(
+                'semantic_detection_mode=open_vocab requires an open_vocabulary_perception'
+            )
         self.open_vocabulary_frames = 0
         self.open_vocabulary_failures = 0
         self.topology_update_interval = int(topology_update_interval)
@@ -252,9 +316,20 @@ class MapNavigationRuntime:
                 )
 
     def _camera_semantic_detections(self, camera: dict, point_image, step: int):
-        fallback = tuple(_semantic_detections(camera, point_image, step=step))
-        if self.open_vocabulary_perception is None or not self.semantic_target:
-            return fallback
+        mode = self.semantic_detection_mode
+        # Ground truth is dropped entirely in open-vocabulary mode so a
+        # detection-quality run cannot be silently rescued by simulator labels.
+        isaac = (
+            tuple(_semantic_detections(camera, point_image, step=step))
+            if mode.uses_isaac
+            else ()
+        )
+        if (
+            not mode.uses_open_vocabulary
+            or self.open_vocabulary_perception is None
+            or not self.semantic_target
+        ):
+            return isaac
         try:
             detections = self.open_vocabulary_perception.perceive(
                 rgba=camera.get('rgba'),
@@ -274,17 +349,19 @@ class MapNavigationRuntime:
                 elif hasattr(detection, 'to_semantic_detection'):
                     semantic_detections.append(detection.to_semantic_detection())
             self.open_vocabulary_frames += 1
-            # Open-vocabulary detections enrich the camera's ground-truth
-            # semantics instead of replacing them: dropping the fallback hid
-            # target classes (e.g. refrigerator) from the scene graph whenever
-            # GroundingDINO returned any context detection, so lexical target
-            # matching could never fire.
+            # In hybrid mode open-vocabulary detections enrich the camera's
+            # ground-truth semantics instead of replacing them: dropping the
+            # fallback hid target classes (e.g. refrigerator) from the scene
+            # graph whenever GroundingDINO returned any context detection, so
+            # lexical target matching could never fire. In open-vocabulary
+            # mode `isaac` is empty and the same pass just deduplicates the
+            # model's own boxes.
             return _deduplicate_semantic_detections(
-                tuple(semantic_detections) + fallback
+                tuple(semantic_detections) + isaac
             )
         except Exception:
             self.open_vocabulary_failures += 1
-            return fallback
+            return isaac
 
     def action_for(
         self,
@@ -910,6 +987,7 @@ class MapNavigationRuntime:
                 'trajectory_static_obstacle_violations': self._static_obstacle_violations,
                 'violated_static_obstacle_labels': sorted(self._violated_static_labels),
                 'semantic_target': self.semantic_target,
+                'semantic_detection_mode': self.semantic_detection_mode.value,
                 'open_vocabulary_frames': self.open_vocabulary_frames,
                 'open_vocabulary_failures': self.open_vocabulary_failures,
                 'voronoi_plans': self.voronoi_plan_count,
@@ -1134,3 +1212,9 @@ def _vector3(value):
 def _yaw(quaternion) -> float:
     w, x, y, z = np.asarray(quaternion, dtype=np.float64).reshape(4)
     return atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+
+__all__ = [
+    'MapNavigationRuntime',
+    'SemanticDetectionMode',
+]

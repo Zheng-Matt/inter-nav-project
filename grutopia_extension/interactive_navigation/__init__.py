@@ -1,5 +1,8 @@
 """Deterministic interaction navigation components."""
 
+from grutopia_extension.interactive_navigation.mapping_runtime import (
+    SemanticDetectionMode,
+)
 from grutopia_extension.interactive_navigation.navigation_sensors import (
     G1_FIRST_PERSON_CLIPPING_RANGE,
     G1_FIRST_PERSON_OFFSET,
@@ -99,6 +102,7 @@ __all__ = [
     'Qwen3WorkerGenerator',
     'SemanticExplorationComponent',
     'SemanticExplorationConfig',
+    'SemanticDetectionMode',
     'SemanticExplorationResult',
     'SemanticExplorationStatus',
     'Doorway',
