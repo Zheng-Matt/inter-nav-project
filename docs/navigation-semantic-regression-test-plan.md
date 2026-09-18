@@ -54,7 +54,7 @@ Use a new output directory so results are not mixed with an earlier run:
 ```bash
 $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
   --gpu 0 \
-  --no-open-vocabulary \
+  --detection-mode isaac \
   --no-qwen \
   --target refrigerator \
   --record-dir grutopia/results/replan-regression-geometry \
@@ -81,20 +81,30 @@ Acceptance criteria:
 ## Stage 3: Fused semantic Isaac run
 
 Start GroundingDINO and MobileSAM as documented in
-`docs/en/get_started/lab-shared-environment.md`, then run:
+`docs/en/get_started/lab-shared-environment.md`, then run all three detection
+modes with separate output directories so their results can be compared:
 
 ```bash
-$ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
-  --gpu 0 \
-  --perception-gpu 1 \
-  --qwen-device cuda:2 \
-  --target refrigerator \
-  --record-dir grutopia/results/replan-regression-semantic \
-  --map-output grutopia/results/replan-regression-semantic/final_map
+for mode in isaac open_vocab hybrid; do
+  $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
+    --gpu 0 \
+    --perception-gpu 1 \
+    --qwen-device cuda:2 \
+    --detection-mode "$mode" \
+    --target refrigerator \
+    --record-dir "grutopia/results/replan-regression-semantic-$mode" \
+    --map-output "grutopia/results/replan-regression-semantic-$mode/final_map"
+done
 ```
+
+`isaac` needs no perception services and is the ground-truth reference;
+`open_vocab` must record `open_vocabulary_frames > 0` with a low
+`open_vocabulary_failures`, and its scene-graph nodes must never carry an
+`isaac` source; `hybrid` is expected to fuse both on the same node.
 
 For the selected target and nearby scene-graph nodes, record:
 
+- `semantic_detection_mode`, and that it matches the requested `--detection-mode`;
 - `target_match`, `target_match_method`, and `target_sources`;
 - node label, confidence, embedding presence, observation count, point count,
   and `last_seen_step`;
@@ -109,13 +119,16 @@ Acceptance criteria:
   evidence that reached the selected node.
 - A lexical match is not treated as proof of an Isaac-only detection.
 - Deduplication does not double-count a same-frame, same-object observation.
+- `isaac` reports `open_vocabulary_frames == 0`; `open_vocab` reports no `isaac`
+  source on any node and no silent fallback when the services are down.
 
 ## Stage 4: Failure and repeatability checks
 
-Run once with the Open-Vocabulary services unavailable and confirm that Isaac
-semantic fallback still completes without losing source attribution. Then run
-the full semantic scenario at least three times with separate output
-directories.
+Run `hybrid` once with the Open-Vocabulary services unavailable and confirm that
+the Isaac semantic fallback still completes without losing source attribution,
+then run `open_vocab` the same way and confirm it reports the failure instead of
+falling back. Then run the full semantic scenario at least three times with
+separate output directories.
 
 Compare across runs:
 

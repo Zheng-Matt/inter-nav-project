@@ -54,12 +54,69 @@ python grutopia/demo/go2_semantic_exploration.py \
 Qwen3-8B worker. Pick free GPUs on your machine. Change `--target` to
 `chair` or `plant` if you want a different object.
 
-Geometry-only smoke test (no VLM services, no Qwen, one GPU):
+## Detection modes
+
+`--detection-mode` selects which perception source feeds the semantic scene
+graph. All three modes run the same mapping, Voronoi exploration, planning, and
+locomotion stack; only the origin of the object detections changes.
+
+| Command | Detections | Use it for |
+| --- | --- | --- |
+| `--detection-mode isaac` | Isaac Sim semantic boxes only (ground truth) | Geometry and planner debugging, an oracle upper bound on target recall, runs without any VLM service |
+| `--detection-mode open_vocab` | GroundingDINO + MobileSAM only | Measuring what the robot actually perceives, with no ground-truth leakage |
+| `--detection-mode hybrid` | Both, fused per object (default) | The full open-vocabulary exploration method |
+
+**1. Isaac ground truth only** — one GPU, no GroundingDINO, no MobileSAM, no Qwen:
 
 ```bash
-python grutopia/demo/go2_semantic_exploration.py \
-  --gpu 0 --no-open-vocabulary --no-qwen --target refrigerator
+$ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
+  --gpu 0 \
+  --detection-mode isaac \
+  --no-qwen \
+  --target refrigerator \
+  --record-dir grutopia/results/go2_semantic_exploration_isaac
 ```
+
+**2. Open vocabulary only** — requires the two HTTP services on the perception GPU:
+
+```bash
+$ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
+  --gpu 0 \
+  --perception-gpu 1 \
+  --qwen-device cuda:2 \
+  --detection-mode open_vocab \
+  --target refrigerator \
+  --record-dir grutopia/results/go2_semantic_exploration_open_vocab
+```
+
+**3. Hybrid** — ground-truth labels fused with open-vocabulary detections
+(this is the default, so `--detection-mode` may be omitted):
+
+```bash
+$ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
+  --gpu 0 \
+  --perception-gpu 1 \
+  --qwen-device cuda:2 \
+  --detection-mode hybrid \
+  --target refrigerator \
+  --record-dir grutopia/results/go2_semantic_exploration_hybrid
+```
+
+How the three modes differ at runtime:
+
+- `isaac` ignores the open-vocabulary stack entirely; GroundingDINO is never
+  queried, so `open_vocabulary_frames` stays `0`.
+- `open_vocab` never falls back to simulator labels. If the services are
+  unreachable the frame yields no detections and `open_vocabulary_failures`
+  increments, so a degraded run cannot be mistaken for a good one. Configuring
+  `open_vocab` without a perception stack is rejected at startup.
+- `hybrid` merges both sources per object: a scene-graph node keeps every
+  source that agreed on it and geometry comes from the denser observation.
+  It degrades to Isaac-only when the services are unreachable.
+
+Recorded runs identify their source, so results stay comparable: every
+scene-graph node carries `sources` (`isaac`, `open_vocabulary`, or both) and
+every statistics block reports `semantic_detection_mode`.
 
 An empty programmatic room is available with `--scene programmatic`.
 
@@ -79,7 +136,8 @@ For staged offline, geometry-only, and fused semantic validation, follow the
 1. `SemanticVoronoiGraph` builds a safe medial-axis skeleton on observed free
    space, plus room-like regions and doorways.
 2. `OpenVocabularyPerception` sends RGB to GroundingDINO + MobileSAM and
-   stores CLIP embeddings. Isaac labels are the fallback.
+   stores CLIP embeddings. `--detection-mode` picks between these detections,
+   the Isaac simulator labels, or a fusion of both.
 3. `AdaptiveExplorationPlanner` ranks frontiers. A local Qwen3-8B worker may
    rerank the bounded topology JSON. The model never sends locomotion
    commands; A* and the Go2 RSL policy still move the robot.

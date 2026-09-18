@@ -66,10 +66,12 @@ Isaac compiles house materials.
 
 ```bash
 $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
-  --gpu 0 --no-open-vocabulary --no-qwen --target refrigerator
+  --gpu 0 --detection-mode isaac --no-qwen --target refrigerator
 ```
 
-This does not need Qwen, CLIP, or the HTTP perception services.
+This does not need Qwen, CLIP, or the HTTP perception services. `--detection-mode`
+takes `isaac` (ground truth only), `open_vocab` (VLM detections only), or
+`hybrid` (both, the default).
 
 ## 4. Full semantic demo
 

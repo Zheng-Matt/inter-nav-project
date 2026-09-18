@@ -45,9 +45,21 @@ GroundingDINO and MobileSAM use these endpoints:
 - `http://localhost:12183/mobile_sam`
 
 Start them with `grutopia/demo/serve_semantic_perception.py`. If those
-endpoints or CLIP weights are unavailable, exploration continues with Isaac
-semantic labels. If Qwen3 is unavailable, frontier selection continues in
+endpoints or CLIP weights are unavailable, `hybrid` exploration continues with
+Isaac semantic labels. If Qwen3 is unavailable, frontier selection continues in
 deterministic geometric mode.
+
+`--detection-mode` chooses the detection source:
+
+| Mode | Detections | Needs the services |
+| --- | --- | --- |
+| `isaac` | Isaac Sim semantic boxes only (ground truth) | no |
+| `open_vocab` | GroundingDINO + MobileSAM only | yes |
+| `hybrid` (default) | both, fused per object | yes, but degrades to `isaac` |
+
+`open_vocab` never falls back to simulator labels, so a run with unreachable
+services reports `open_vocabulary_failures` instead of quietly using ground
+truth. Every scene-graph node records which sources agreed on it.
 
 ## Run
 
@@ -98,7 +110,14 @@ Disable unavailable model layers explicitly when testing the geometry:
 
 ```bash
 $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
-  --no-open-vocabulary --no-qwen
+  --detection-mode isaac --no-qwen
+```
+
+Run the detector on its own, without any ground-truth labels:
+
+```bash
+$ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
+  --detection-mode open_vocab --qwen-device cuda:2
 ```
 
 Outputs under the `--record-dir` include synchronized videos plus

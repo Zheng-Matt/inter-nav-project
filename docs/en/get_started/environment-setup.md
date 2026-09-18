@@ -189,6 +189,6 @@ If Qwen3 fails to start, frontier ranking falls back to geometric scoring.
 | `omni.isaac` import fails | Isaac Sim 4.2 is not sourced. `conda activate grutopia` after `./setup_conda.sh`, or use Isaac's `python.sh`. |
 | `GRScenes navigation USD not found` | `download_mv7_scene.py` did not finish. Confirm the `.usda` path in section 6. |
 | Go2 USD missing | Run `download_go2_asset.py` from the Isaac env, or copy `isaaclab_go2.usd` into `grutopia/assets/robots/go2/`. |
-| CUDA OOM | Give Isaac, the two HTTP services, and Qwen different GPUs. Or run `--no-qwen` / `--no-open-vocabulary`. |
+| CUDA OOM | Give Isaac, the two HTTP services, and Qwen different GPUs. Or run `--no-qwen` / `--detection-mode isaac`. |
 | Qwen worker never starts | `QWEN3_PYTHON` must be the `semexp` interpreter, not Isaac Python. |
 | No detections | GroundingDINO / MobileSAM not listening on `12181` / `12183`. |
