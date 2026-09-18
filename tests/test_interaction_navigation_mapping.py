@@ -13,6 +13,7 @@ from grutopia_extension.interactive_navigation.mapping import (
 )
 from grutopia_extension.interactive_navigation.mapping_runtime import (
     MapNavigationRuntime,
+    SemanticDetectionMode,
     _camera_cloud,
     _deduplicate_semantic_detections,
     _semantic_detections,
@@ -576,6 +577,109 @@ class InteractionNavigationMappingTest(unittest.TestCase):
         self.assertEqual(refrigerator.sources, ('open_vocabulary',))
         self.assertEqual(runtime.open_vocabulary_frames, 1)
 
+    def test_detection_mode_accepts_cli_spellings(self):
+        self.assertIs(SemanticDetectionMode.parse('isaac'), SemanticDetectionMode.ISAAC)
+        self.assertIs(
+            SemanticDetectionMode.parse('open-vocabulary'),
+            SemanticDetectionMode.OPEN_VOCABULARY,
+        )
+        self.assertIs(SemanticDetectionMode.parse('HYBRID'), SemanticDetectionMode.HYBRID)
+        self.assertIs(
+            SemanticDetectionMode.parse(SemanticDetectionMode.HYBRID),
+            SemanticDetectionMode.HYBRID,
+        )
+        with self.assertRaises(ValueError):
+            SemanticDetectionMode.parse('grounding-dino')
+
+    def test_open_vocabulary_mode_without_perception_is_rejected(self):
+        with self.assertRaises(ValueError):
+            MapNavigationRuntime(
+                mapping_config=MappingConfig(),
+                semantic_detection_mode='open_vocab',
+            )
+
+    def test_isaac_mode_skips_open_vocabulary_perception(self):
+        class _FakePerception:
+            calls = 0
+
+            def perceive(self, **kwargs):
+                type(self).calls += 1
+                return [SemanticDetection('refrigerator', (2.0, 0.0, 0.5))]
+
+        runtime = MapNavigationRuntime(
+            mapping_config=MappingConfig(
+                x_limits=(0.0, 4.0),
+                y_limits=(-2.0, 2.0),
+                safe_recovery_y_limits=(-1.5, 1.5),
+            ),
+            use_scene_graph=True,
+            use_rgb_occupancy=False,
+            use_semantic_occupancy=False,
+            semantic_target='refrigerator',
+            open_vocabulary_perception=_FakePerception(),
+            semantic_detection_mode='isaac',
+        )
+
+        runtime.update(0, _camera_observation())
+
+        labels = sorted(node.label for node in runtime.map.scene_graph.object_nodes())
+        self.assertEqual(labels, ['obstacle'])
+        self.assertEqual(_FakePerception.calls, 0)
+        self.assertEqual(runtime.open_vocabulary_frames, 0)
+        self.assertEqual(runtime.statistics()['semantic_detection_mode'], 'isaac')
+
+    def test_open_vocabulary_mode_drops_ground_truth_labels(self):
+        class _FakePerception:
+            def perceive(self, **kwargs):
+                return [SemanticDetection('refrigerator', (2.0, 0.0, 0.5))]
+
+        runtime = MapNavigationRuntime(
+            mapping_config=MappingConfig(
+                x_limits=(0.0, 4.0),
+                y_limits=(-2.0, 2.0),
+                safe_recovery_y_limits=(-1.5, 1.5),
+            ),
+            use_scene_graph=True,
+            use_rgb_occupancy=False,
+            use_semantic_occupancy=False,
+            semantic_target='refrigerator',
+            open_vocabulary_perception=_FakePerception(),
+            semantic_detection_mode='open-vocab',
+        )
+
+        runtime.update(0, _camera_observation())
+
+        # The camera's own 'obstacle' box is simulator ground truth, so an
+        # open-vocabulary run must not leak it into the scene graph.
+        labels = [node.label for node in runtime.map.scene_graph.object_nodes()]
+        self.assertEqual(labels, ['refrigerator'])
+        self.assertEqual(runtime.open_vocabulary_frames, 1)
+        self.assertEqual(runtime.statistics()['semantic_detection_mode'], 'open_vocab')
+
+    def test_open_vocabulary_mode_failure_does_not_fall_back_to_ground_truth(self):
+        class _FailingPerception:
+            def perceive(self, **kwargs):
+                raise RuntimeError('gdino service is down')
+
+        runtime = MapNavigationRuntime(
+            mapping_config=MappingConfig(
+                x_limits=(0.0, 4.0),
+                y_limits=(-2.0, 2.0),
+                safe_recovery_y_limits=(-1.5, 1.5),
+            ),
+            use_scene_graph=True,
+            use_rgb_occupancy=False,
+            use_semantic_occupancy=False,
+            semantic_target='refrigerator',
+            open_vocabulary_perception=_FailingPerception(),
+            semantic_detection_mode='open_vocab',
+        )
+
+        runtime.update(0, _camera_observation())
+
+        self.assertEqual(list(runtime.map.scene_graph.object_nodes()), [])
+        self.assertEqual(runtime.open_vocabulary_failures, 1)
+
     def test_rgb_depth_endpoints_add_obstacles_without_clearing_rays(self):
         runtime = MapNavigationRuntime(
             mapping_config=MappingConfig(
@@ -1093,6 +1197,27 @@ class InteractionNavigationMappingTest(unittest.TestCase):
         action = runtime.action_for(decision, {'position': (6.1, 0.2, 0.4)})
 
         self.assertEqual(action['recover'][0], (6.0, 0.1, 1.05))
+
+
+def _camera_observation():
+    """A one-pixel camera frame whose Isaac semantics label one obstacle."""
+
+    return {
+        'position': np.array([0.0, 0.0, 0.8], dtype=np.float32),
+        'sensors': {
+            'camera': {
+                'rgba': np.full((1, 1, 4), 200, dtype=np.uint8),
+                'depth': np.ones((1, 1), dtype=np.float32),
+                'pointcloud': np.array([[2.0, 0.0, 0.5]], dtype=np.float32),
+                'position': np.array([0.0, 0.0, 0.8], dtype=np.float32),
+                'bounding_box_2d_tight': {
+                    'data': np.array([[1, 0, 0, 1, 1, 0.0]], dtype=np.float32),
+                    'info': {'idToLabels': {'1': {'class': 'obstacle'}}},
+                },
+            }
+        },
+    }
+
 
 if __name__ == '__main__':
     unittest.main()

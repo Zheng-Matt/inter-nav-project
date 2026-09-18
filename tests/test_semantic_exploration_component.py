@@ -40,6 +40,32 @@ def _component(target='carry object', frontier_selection_interval=1, perception=
 
 
 class SemanticExplorationComponentTest(unittest.TestCase):
+    def test_detection_mode_reaches_the_mapping_runtime(self):
+        component = _component('refrigerator')
+        self.assertEqual(component.mapping.semantic_detection_mode.value, 'hybrid')
+
+        open_vocab = SemanticExplorationComponent(
+            SemanticExplorationConfig(
+                target_query='refrigerator',
+                semantic_detection_mode='open_vocab',
+            ),
+            perception=_FakeTextEmbeddingPerception(),
+        )
+        self.assertEqual(open_vocab.mapping.semantic_detection_mode.value, 'open_vocab')
+
+    def test_open_vocab_mode_without_perception_is_rejected(self):
+        with self.assertRaises(ValueError):
+            SemanticExplorationComponent(
+                SemanticExplorationConfig(
+                    target_query='refrigerator',
+                    semantic_detection_mode='open_vocab',
+                )
+            )
+
+    def test_unknown_detection_mode_is_rejected(self):
+        with self.assertRaises(ValueError):
+            SemanticExplorationConfig(target_query='refrigerator', semantic_detection_mode='radar')
+
     def test_empty_map_rate_limits_frontier_reselection(self):
         component = _component('refrigerator', frontier_selection_interval=160)
         observation = {'position': (1.0, 1.5, 0.4), 'orientation': (1.0, 0.0, 0.0, 0.0), 'sensors': {}}
