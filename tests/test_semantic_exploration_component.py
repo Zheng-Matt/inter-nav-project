@@ -43,6 +43,10 @@ class SemanticExplorationComponentTest(unittest.TestCase):
     def test_detection_mode_reaches_the_mapping_runtime(self):
         component = _component('refrigerator')
         self.assertEqual(component.mapping.semantic_detection_mode.value, 'hybrid')
+        self.assertEqual(
+            component.statistics()['semantic_detection_effective_mode'],
+            'isaac',
+        )
 
         open_vocab = SemanticExplorationComponent(
             SemanticExplorationConfig(
@@ -52,6 +56,24 @@ class SemanticExplorationComponentTest(unittest.TestCase):
             perception=_FakeTextEmbeddingPerception(),
         )
         self.assertEqual(open_vocab.mapping.semantic_detection_mode.value, 'open_vocab')
+
+    def test_hybrid_preflight_failure_is_persisted_in_statistics(self):
+        component = SemanticExplorationComponent(
+            SemanticExplorationConfig(
+                target_query='refrigerator',
+                semantic_detection_mode='hybrid',
+                open_vocabulary_startup_error='ConnectionError: service offline',
+            ),
+        )
+
+        stats = component.statistics()
+        self.assertEqual(stats['semantic_detection_mode'], 'hybrid')
+        self.assertEqual(stats['semantic_detection_effective_mode'], 'isaac')
+        self.assertFalse(stats['open_vocabulary_available'])
+        self.assertEqual(
+            stats['open_vocabulary_startup_error'],
+            'ConnectionError: service offline',
+        )
 
     def test_open_vocab_mode_without_perception_is_rejected(self):
         with self.assertRaises(ValueError):

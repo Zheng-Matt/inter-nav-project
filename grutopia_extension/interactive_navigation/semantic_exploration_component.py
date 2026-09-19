@@ -41,6 +41,7 @@ class SemanticExplorationConfig:
     # `isaac` = simulator ground-truth labels only, `open_vocab` = VLM
     # detections only, `hybrid` = fused. See SemanticDetectionMode.
     semantic_detection_mode: str = 'hybrid'
+    open_vocabulary_startup_error: Optional[str] = None
     target_min_observations: int = 2
     target_embedding_threshold: float = 0.24
     frontier_selection_interval: int = 160
@@ -124,6 +125,7 @@ class SemanticExplorationComponent:
             semantic_target=config.target_query,
             open_vocabulary_perception=perception,
             semantic_detection_mode=config.semantic_detection_mode,
+            open_vocabulary_startup_error=config.open_vocabulary_startup_error,
             use_semantic_voronoi=True,
             semantic_voronoi_config=config.voronoi,
             topology_update_interval=config.topology_update_interval,

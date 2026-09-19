@@ -363,36 +363,79 @@ def run_go2_semantic_exploration(
         SemanticExplorationConfig,
     )
 
-    runtime = SimulatorRuntime(
-        config_class=build_go2_navigation_config(
-            profile,
-            Go2NavigationRunConfig(
-                gpu=run.gpu,
-                headless=run.headless,
-                max_steps=run.max_steps,
-                mapping_warmup_steps=run.mapping_warmup_steps,
-                log_every=run.log_every,
-                record_dir=run.record_dir,
-                record_every=run.record_every,
-                video_fps=run.video_fps,
-                map_output=run.map_output,
-                policy_path=run.policy_path,
-                robot_usd_path=run.robot_usd_path,
-                generate_fallback_asset=run.generate_fallback_asset,
-                ground_height=run.ground_height,
-                rendering_interval=run.rendering_interval,
-                use_fabric=run.use_fabric,
-            ),
-            objects=objects,
-        ),
-        headless=run.headless,
-        active_gpu=run.gpu,
-        physics_gpu=run.gpu,
-    )
-    configure_scene_mdl_paths(profile.scene_asset_path)
-    env = component = recorder = qwen_worker = None
+    runtime = env = component = recorder = qwen_worker = perception = None
     result_code = 2
     try:
+        detection_mode = SemanticDetectionMode.parse(run.semantic_detection_mode)
+        perception_startup_error = None
+        if detection_mode.uses_open_vocabulary:
+            perception = OpenVocabularyPerception(
+                OpenVocabularyPerceptionConfig(
+                    clip_device=f'cuda:{run.perception_gpu}',
+                    query_interval=0.25,
+                    request_timeout=8.0,
+                )
+            )
+            try:
+                readiness = perception.check_ready()
+            except Exception as error:
+                perception_startup_error = f'{type(error).__name__}: {error}'
+                if detection_mode is SemanticDetectionMode.OPEN_VOCABULARY:
+                    raise RuntimeError(
+                        'open_vocab requires ready GroundingDINO, MobileSAM, '
+                        f'and CLIP before the run starts: {type(error).__name__}: {error}'
+                    ) from error
+                print(
+                    json.dumps(
+                        {
+                            'event': 'open_vocabulary_preflight_failed',
+                            'mode': detection_mode.value,
+                            'type': type(error).__name__,
+                            'message': str(error),
+                            'fallback': 'isaac',
+                        }
+                    ),
+                    flush=True,
+                )
+                perception = None
+            else:
+                print(
+                    json.dumps(
+                        {
+                            'event': 'open_vocabulary_ready',
+                            'mode': detection_mode.value,
+                            **readiness,
+                        }
+                    ),
+                    flush=True,
+                )
+        runtime = SimulatorRuntime(
+            config_class=build_go2_navigation_config(
+                profile,
+                Go2NavigationRunConfig(
+                    gpu=run.gpu,
+                    headless=run.headless,
+                    max_steps=run.max_steps,
+                    mapping_warmup_steps=run.mapping_warmup_steps,
+                    log_every=run.log_every,
+                    record_dir=run.record_dir,
+                    record_every=run.record_every,
+                    video_fps=run.video_fps,
+                    map_output=run.map_output,
+                    policy_path=run.policy_path,
+                    robot_usd_path=run.robot_usd_path,
+                    generate_fallback_asset=run.generate_fallback_asset,
+                    ground_height=run.ground_height,
+                    rendering_interval=run.rendering_interval,
+                    use_fabric=run.use_fabric,
+                ),
+                objects=objects,
+            ),
+            headless=run.headless,
+            active_gpu=run.gpu,
+            physics_gpu=run.gpu,
+        )
+        configure_scene_mdl_paths(profile.scene_asset_path)
         import_extensions(('controllers', 'objects', 'robots', 'sensors', 'tasks'))
         env = Env(runtime)
         robot_observation, _ = env.reset()
@@ -417,16 +460,6 @@ def run_go2_semantic_exploration(
         _label_go2_and_household_semantics(profile, active_robot.config.prim_path)
         _apply_high_friction_material('/World/env_0/objects/grscene_go2_floor')
 
-        detection_mode = SemanticDetectionMode.parse(run.semantic_detection_mode)
-        perception = None
-        if detection_mode.uses_open_vocabulary:
-            perception = OpenVocabularyPerception(
-                OpenVocabularyPerceptionConfig(
-                    clip_device=f'cuda:{run.perception_gpu}',
-                    query_interval=0.25,
-                    request_timeout=8.0,
-                )
-            )
         scorer = None
         if run.enable_qwen:
             worker_script = (
@@ -472,6 +505,7 @@ def run_go2_semantic_exploration(
                 max_forward_speed=profile.max_forward_speed,
                 max_lateral_speed=profile.max_lateral_speed,
                 semantic_detection_mode=detection_mode.value,
+                open_vocabulary_startup_error=perception_startup_error,
             ),
             perception=perception,
             scorer=scorer,
@@ -598,7 +632,7 @@ def run_go2_semantic_exploration(
             qwen_worker.close()
         if env is not None:
             env.close()
-        else:
+        elif runtime is not None:
             runtime.simulation_app.close()
     return result_code
 

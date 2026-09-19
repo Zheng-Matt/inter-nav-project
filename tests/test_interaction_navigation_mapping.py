@@ -575,7 +575,10 @@ class InteractionNavigationMappingTest(unittest.TestCase):
             node for node in runtime.map.scene_graph.object_nodes() if node.label == 'refrigerator'
         )
         self.assertEqual(refrigerator.sources, ('open_vocabulary',))
+        self.assertEqual(runtime.open_vocabulary_attempts, 1)
         self.assertEqual(runtime.open_vocabulary_frames, 1)
+        self.assertEqual(runtime.open_vocabulary_detections, 1)
+        self.assertEqual(runtime.open_vocabulary_last_labels, ['refrigerator'])
 
     def test_detection_mode_accepts_cli_spellings(self):
         self.assertIs(SemanticDetectionMode.parse('isaac'), SemanticDetectionMode.ISAAC)
@@ -679,6 +682,73 @@ class InteractionNavigationMappingTest(unittest.TestCase):
 
         self.assertEqual(list(runtime.map.scene_graph.object_nodes()), [])
         self.assertEqual(runtime.open_vocabulary_failures, 1)
+        self.assertEqual(
+            runtime.statistics()['open_vocabulary_last_error'],
+            {
+                'step': 0,
+                'type': 'RuntimeError',
+                'message': 'gdino service is down',
+            },
+        )
+
+    def test_open_vocabulary_mode_stops_after_repeated_runtime_failures(self):
+        class _FailingPerception:
+            def perceive(self, **kwargs):
+                raise RuntimeError('mobile-sam connection refused')
+
+        runtime = MapNavigationRuntime(
+            mapping_config=MappingConfig(
+                x_limits=(0.0, 4.0),
+                y_limits=(-2.0, 2.0),
+                safe_recovery_y_limits=(-1.5, 1.5),
+            ),
+            use_scene_graph=True,
+            use_rgb_occupancy=False,
+            use_semantic_occupancy=False,
+            semantic_target='refrigerator',
+            open_vocabulary_perception=_FailingPerception(),
+            semantic_detection_mode='open_vocab',
+            open_vocabulary_failure_limit=3,
+        )
+
+        runtime.update(0, _camera_observation())
+        runtime.update(24, _camera_observation())
+        with self.assertRaisesRegex(RuntimeError, 'failed 3 consecutive frames'):
+            runtime.update(48, _camera_observation())
+
+        stats = runtime.statistics()
+        self.assertEqual(stats['open_vocabulary_attempts'], 3)
+        self.assertEqual(stats['open_vocabulary_failures'], 3)
+        self.assertEqual(stats['open_vocabulary_consecutive_failures'], 3)
+
+    def test_rate_limited_open_vocabulary_frame_is_reported_separately(self):
+        class _RateLimitedPerception:
+            last_query_status = 'rate_limited'
+            last_item_errors = []
+
+            def perceive(self, **kwargs):
+                return []
+
+        runtime = MapNavigationRuntime(
+            mapping_config=MappingConfig(
+                x_limits=(0.0, 4.0),
+                y_limits=(-2.0, 2.0),
+                safe_recovery_y_limits=(-1.5, 1.5),
+            ),
+            use_scene_graph=True,
+            use_rgb_occupancy=False,
+            use_semantic_occupancy=False,
+            semantic_target='refrigerator',
+            open_vocabulary_perception=_RateLimitedPerception(),
+            semantic_detection_mode='open_vocab',
+        )
+
+        runtime.update(0, _camera_observation())
+
+        stats = runtime.statistics()
+        self.assertEqual(stats['open_vocabulary_attempts'], 1)
+        self.assertEqual(stats['open_vocabulary_frames'], 0)
+        self.assertEqual(stats['open_vocabulary_rate_limited_frames'], 1)
 
     def test_rgb_depth_endpoints_add_obstacles_without_clearing_rays(self):
         runtime = MapNavigationRuntime(

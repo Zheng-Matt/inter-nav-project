@@ -24,13 +24,19 @@ class _Response:
 
 
 class _Session:
-    def __init__(self, payloads):
+    def __init__(self, payloads=(), get_payloads=()):
         self.payloads = iter(payloads)
+        self.get_payloads = iter(get_payloads)
         self.calls = []
+        self.get_calls = []
 
     def post(self, url, **kwargs):
         self.calls.append((url, kwargs))
         return _Response(next(self.payloads))
+
+    def get(self, url, **kwargs):
+        self.get_calls.append((url, kwargs))
+        return _Response(next(self.get_payloads))
 
 
 class OpenVocabularyPerceptionTest(unittest.TestCase):
@@ -142,6 +148,91 @@ class OpenVocabularyPerceptionTest(unittest.TestCase):
         self.assertEqual([call[1]['timeout'] for call in session.calls], [0.125, 0.125])
         self.assertEqual(session.calls[0][0], 'http://localhost:12181/gdino')
         self.assertEqual(session.calls[1][0], 'http://localhost:12183/mobile_sam')
+
+    def test_rest_backend_preflight_checks_both_health_endpoints(self):
+        session = _Session(
+            get_payloads=(
+                {'ready': True, 'service': 'grounding-dino'},
+                {'ready': True, 'service': 'mobile-sam'},
+            )
+        )
+        config = OpenVocabularyPerceptionConfig(request_timeout=0.125)
+        backend = AgentVLMBackend(config, session=session)
+
+        status = backend.check_ready()
+
+        self.assertEqual(
+            status,
+            {
+                'grounding_dino': 'http://localhost:12181/health',
+                'mobile_sam': 'http://localhost:12183/health',
+            },
+        )
+        self.assertEqual(
+            [call[0] for call in session.get_calls],
+            ['http://localhost:12181/health', 'http://localhost:12183/health'],
+        )
+        self.assertEqual(
+            [call[1]['timeout'] for call in session.get_calls],
+            [0.125, 0.125],
+        )
+
+    def test_rest_backend_preflight_rejects_unready_service(self):
+        backend = AgentVLMBackend(
+            session=_Session(get_payloads=({'ready': False},)),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, 'grounding_dino service is not ready'):
+            backend.check_ready()
+
+    def test_one_bad_candidate_does_not_discard_other_detections(self):
+        mask = np.ones((3, 4), dtype=bool)
+
+        def segmenter(_image, bbox):
+            if bbox[0] == 0.0:
+                raise RuntimeError('bad chair mask')
+            return mask
+
+        perception = OpenVocabularyPerception(
+            OpenVocabularyPerceptionConfig(query_interval=0),
+            detector=lambda image, query: [
+                {'label': 'chair', 'confidence': 0.9, 'bbox': [0, 0, 2, 3]},
+                {'label': 'refrigerator', 'confidence': 0.9, 'bbox': [2, 0, 4, 3]},
+            ],
+            segmenter=segmenter,
+            embedder=lambda crop: np.ones(2),
+        )
+
+        detections = perception.perceive(
+            self.rgba,
+            self.depth,
+            self.point_image,
+            'refrigerator',
+        )
+
+        self.assertEqual([detection.label for detection in detections], ['refrigerator'])
+        self.assertEqual(perception.last_item_errors[0]['label'], 'chair')
+        self.assertIn('bad chair mask', perception.last_item_errors[0]['message'])
+
+    def test_all_bad_candidates_raise_a_frame_error(self):
+        perception = OpenVocabularyPerception(
+            OpenVocabularyPerceptionConfig(query_interval=0),
+            detector=lambda image, query: [
+                {'label': 'refrigerator', 'confidence': 0.9, 'bbox': [0, 0, 4, 3]},
+            ],
+            segmenter=lambda image, bbox: (_ for _ in ()).throw(
+                RuntimeError('sam offline')
+            ),
+            embedder=lambda crop: np.ones(2),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, 'all materialized detections failed'):
+            perception.perceive(
+                self.rgba,
+                self.depth,
+                self.point_image,
+                'refrigerator',
+            )
 
     def test_repeated_query_is_rate_limited(self):
         now = [10.0]

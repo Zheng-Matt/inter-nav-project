@@ -22,6 +22,7 @@ from grutopia_extension.interactive_navigation.go2_navigation_runner import (
 from grutopia_extension.interactive_navigation.mapping_runtime import (
     SemanticDetectionMode,
 )
+from grutopia_extension.interactive_navigation.output_paths import resolve_map_output
 from grutopia_extension.interactive_navigation.point_navigation_profiles import (
     load_point_navigation_profile,
     programmatic_go2_profile,
@@ -83,7 +84,8 @@ def parse_args():
     )
     parser.add_argument(
         '--map-output',
-        default='grutopia/results/go2_semantic_exploration/final_map',
+        default=None,
+        help='map prefix; defaults to <record-dir>/final_map',
     )
     parser.add_argument(
         '--record-dir',
@@ -175,6 +177,7 @@ def build_profile(args):
 
 def main():
     args = parse_args()
+    map_output = resolve_map_output(args.record_dir, args.map_output)
     profile = build_profile(args)
     objects = build_grscene_floor(profile) if args.scene == 'grscene' else build_semantic_objects(args)
     return run_go2_semantic_exploration(
@@ -191,7 +194,7 @@ def main():
             record_dir=args.record_dir,
             record_every=args.record_every,
             video_fps=args.video_fps,
-            map_output=args.map_output,
+            map_output=map_output,
             policy_path=args.policy_path,
             robot_usd_path=args.robot_usd,
             generate_fallback_asset=args.generate_fallback_asset,

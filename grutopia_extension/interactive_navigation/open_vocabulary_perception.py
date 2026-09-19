@@ -113,6 +113,34 @@ class AgentVLMBackend:
             raise ValueError('VLM service returned a non-object JSON response')
         return result
 
+    def _get(self, url: str) -> dict:
+        response = self._session.get(
+            url,
+            timeout=self.config.request_timeout,
+            proxies={'http': '', 'https': ''},
+        )
+        response.raise_for_status()
+        result = response.json()
+        if not isinstance(result, dict):
+            raise ValueError('VLM health endpoint returned a non-object JSON response')
+        return result
+
+    def check_ready(self) -> dict:
+        """Fail fast unless both HTTP perception services report ready."""
+
+        status = {}
+        endpoints = {
+            'grounding_dino': self.config.grounding_dino_url,
+            'mobile_sam': self.config.mobile_sam_url,
+        }
+        for name, endpoint in endpoints.items():
+            health_url = endpoint.rsplit('/', 1)[0] + '/health'
+            payload = self._get(health_url)
+            if payload.get('ready') is not True:
+                raise RuntimeError(f'{name} service is not ready at {health_url}')
+            status[name] = health_url
+        return status
+
     def detect(self, image: np.ndarray, caption: str) -> list[dict]:
         result = self._post(
             self.config.grounding_dino_url,
@@ -171,6 +199,29 @@ class OpenVocabularyPerception:
         self._clip_processor: Optional[Any] = None
         self._clip_model: Optional[Any] = None
         self._clip_device: Optional[str] = None
+        self.last_item_errors: list[dict] = []
+        self.last_query_status = 'idle'
+
+    def check_ready(self, load_clip: bool = True) -> dict:
+        """Validate remote services and local CLIP before a long run starts."""
+
+        services = {}
+        checked = set()
+        for component in (self.detector, self.segmenter):
+            if id(component) in checked:
+                continue
+            checked.add(id(component))
+            checker = getattr(component, 'check_ready', None)
+            if checker is not None:
+                result = checker()
+                if isinstance(result, dict):
+                    services.update(result)
+        if load_clip and self.embedder is None:
+            self._ensure_clip()
+        return {
+            'services': services,
+            'clip_device': self._clip_device if load_clip else None,
+        }
 
     def build_query(self, target: str, include_context: bool = True) -> str:
         labels = [part.strip() for part in target.replace('|', '.').split('.') if part.strip()]
@@ -188,6 +239,7 @@ class OpenVocabularyPerception:
         include_context: bool = True,
         step: int = 0,
     ) -> list[Any]:
+        self.last_item_errors = []
         rgb, depth_array, points = self._validate_inputs(rgba, depth, point_image)
         query = self.build_query(target, include_context=include_context)
         now = self._clock()
@@ -197,12 +249,15 @@ class OpenVocabularyPerception:
             # centroid as a new observation when either the camera or object
             # has moved. Rate limiting therefore skips this frame instead of
             # caching three-dimensional observations.
+            self.last_query_status = 'rate_limited'
             return []
 
         try:
             detections = self._run_detector(rgb, query)
             result = self._materialize(detections, rgb, depth_array, points, step=step)
+            self.last_query_status = 'ok'
         except Exception:
+            self.last_query_status = 'failed'
             if self.simulator_fallback is None:
                 raise
             else:
@@ -214,6 +269,7 @@ class OpenVocabularyPerception:
                         query=query,
                     )
                 )
+                self.last_query_status = 'fallback'
 
         self._last_query_time = now
         self._last_query = query
@@ -273,30 +329,61 @@ class OpenVocabularyPerception:
     ) -> list[OpenVocabularyDetection]:
         output = []
         for raw in raw_detections:
-            label, confidence, bbox = self._parse_detection(raw, image.shape[:2])
-            if confidence < self.config.confidence_threshold:
-                continue
-            mask = self._run_segmenter(image, bbox)
-            if mask.shape != image.shape[:2]:
-                raise ValueError('segmenter mask must align pixel-for-pixel with the input')
-            valid = mask & np.isfinite(depth) & (depth > 0) & np.isfinite(point_image).all(axis=-1)
-            world_points = point_image[valid]
-            if len(world_points) < self.config.min_points:
-                continue
-            embedding = self._embed_masked_crop(image, mask)
-            output.append(
-                OpenVocabularyDetection(
-                    label=label,
-                    confidence=confidence,
-                    bbox=bbox,
-                    mask=mask,
-                    embedding=embedding,
-                    centroid=tuple(float(value) for value in world_points.mean(axis=0)),
-                    point_count=int(len(world_points)),
-                    step=int(step),
+            label = self._raw_label(raw)
+            try:
+                label, confidence, bbox = self._parse_detection(raw, image.shape[:2])
+                if confidence < self.config.confidence_threshold:
+                    continue
+                mask = self._run_segmenter(image, bbox)
+                if mask.shape != image.shape[:2]:
+                    raise ValueError('segmenter mask must align pixel-for-pixel with the input')
+                valid = (
+                    mask
+                    & np.isfinite(depth)
+                    & (depth > 0)
+                    & np.isfinite(point_image).all(axis=-1)
                 )
+                world_points = point_image[valid]
+                if len(world_points) < self.config.min_points:
+                    continue
+                embedding = self._embed_masked_crop(image, mask)
+                output.append(
+                    OpenVocabularyDetection(
+                        label=label,
+                        confidence=confidence,
+                        bbox=bbox,
+                        mask=mask,
+                        embedding=embedding,
+                        centroid=tuple(float(value) for value in world_points.mean(axis=0)),
+                        point_count=int(len(world_points)),
+                        step=int(step),
+                    )
+                )
+            except Exception as error:
+                self.last_item_errors.append(
+                    {
+                        'label': label,
+                        'type': type(error).__name__,
+                        'message': str(error),
+                    }
+                )
+        if self.last_item_errors and not output:
+            first = self.last_item_errors[0]
+            raise RuntimeError(
+                f'all materialized detections failed; first error for '
+                f'{first["label"]!r}: {first["type"]}: {first["message"]}'
             )
         return output
+
+    @staticmethod
+    def _raw_label(raw: Any) -> str:
+        if isinstance(raw, OpenVocabularyDetection):
+            return raw.label
+        if isinstance(raw, dict):
+            return str(raw.get('label', raw.get('phrase', 'object')))
+        if isinstance(raw, (tuple, list)) and raw:
+            return str(raw[0])
+        return 'unknown'
 
     @staticmethod
     def _parse_detection(raw: Any, image_shape: tuple[int, int]) -> tuple[str, float, BBox]:

@@ -100,6 +100,8 @@ class MapNavigationRuntime:
         semantic_target: str = '',
         open_vocabulary_perception=None,
         semantic_detection_mode=SemanticDetectionMode.HYBRID,
+        open_vocabulary_startup_error: Optional[str] = None,
+        open_vocabulary_failure_limit: int = 3,
         use_semantic_voronoi: bool = False,
         semantic_voronoi_config=None,
         topology_update_interval: int = 40,
@@ -111,6 +113,8 @@ class MapNavigationRuntime:
             raise ValueError('replan_lookahead_distance must be positive when provided')
         if topology_update_interval <= 0:
             raise ValueError('topology_update_interval must be positive')
+        if open_vocabulary_failure_limit <= 0:
+            raise ValueError('open_vocabulary_failure_limit must be positive')
         self.map = FusedMap(mapping_config)
         self.lidar_interval = lidar_interval
         self.rgb_interval = rgb_interval
@@ -127,6 +131,7 @@ class MapNavigationRuntime:
         self.semantic_target = str(semantic_target).strip()
         self.open_vocabulary_perception = open_vocabulary_perception
         self.semantic_detection_mode = SemanticDetectionMode.parse(semantic_detection_mode)
+        self.open_vocabulary_startup_error = open_vocabulary_startup_error
         if (
             self.semantic_detection_mode is SemanticDetectionMode.OPEN_VOCABULARY
             and open_vocabulary_perception is None
@@ -140,6 +145,18 @@ class MapNavigationRuntime:
             )
         self.open_vocabulary_frames = 0
         self.open_vocabulary_failures = 0
+        self.open_vocabulary_attempts = 0
+        self.open_vocabulary_rate_limited_frames = 0
+        self.open_vocabulary_empty_frames = 0
+        self.open_vocabulary_detections = 0
+        self.open_vocabulary_partial_failures = 0
+        self.open_vocabulary_consecutive_failures = 0
+        self.open_vocabulary_failure_limit = int(open_vocabulary_failure_limit)
+        self.open_vocabulary_last_error = None
+        self.open_vocabulary_last_partial_errors = []
+        self.open_vocabulary_last_labels = []
+        self.open_vocabulary_last_detection_step = None
+        self.open_vocabulary_last_success_step = None
         self.topology_update_interval = int(topology_update_interval)
         self.semantic_voronoi = None
         self.voronoi_planner = None
@@ -330,6 +347,7 @@ class MapNavigationRuntime:
             or not self.semantic_target
         ):
             return isaac
+        self.open_vocabulary_attempts += 1
         try:
             detections = self.open_vocabulary_perception.perceive(
                 rgba=camera.get('rgba'),
@@ -348,7 +366,32 @@ class MapNavigationRuntime:
                     )
                 elif hasattr(detection, 'to_semantic_detection'):
                     semantic_detections.append(detection.to_semantic_detection())
+            query_status = getattr(
+                self.open_vocabulary_perception,
+                'last_query_status',
+                'ok',
+            )
+            if query_status == 'rate_limited':
+                self.open_vocabulary_rate_limited_frames += 1
+                return isaac
             self.open_vocabulary_frames += 1
+            self.open_vocabulary_consecutive_failures = 0
+            self.open_vocabulary_last_success_step = int(step)
+            item_errors = getattr(
+                self.open_vocabulary_perception,
+                'last_item_errors',
+                (),
+            )
+            self.open_vocabulary_last_partial_errors = list(item_errors)
+            self.open_vocabulary_partial_failures += len(item_errors)
+            self.open_vocabulary_detections += len(semantic_detections)
+            if semantic_detections:
+                self.open_vocabulary_last_labels = sorted(
+                    {detection.label for detection in semantic_detections}
+                )
+                self.open_vocabulary_last_detection_step = int(step)
+            else:
+                self.open_vocabulary_empty_frames += 1
             # In hybrid mode open-vocabulary detections enrich the camera's
             # ground-truth semantics instead of replacing them: dropping the
             # fallback hid target classes (e.g. refrigerator) from the scene
@@ -359,8 +402,29 @@ class MapNavigationRuntime:
             return _deduplicate_semantic_detections(
                 tuple(semantic_detections) + isaac
             )
-        except Exception:
+        except Exception as error:
             self.open_vocabulary_failures += 1
+            self.open_vocabulary_consecutive_failures += 1
+            item_errors = list(
+                getattr(self.open_vocabulary_perception, 'last_item_errors', ())
+            )
+            self.open_vocabulary_last_partial_errors = item_errors
+            self.open_vocabulary_partial_failures += len(item_errors)
+            self.open_vocabulary_last_error = {
+                'step': int(step),
+                'type': type(error).__name__,
+                'message': str(error),
+            }
+            if (
+                mode is SemanticDetectionMode.OPEN_VOCABULARY
+                and self.open_vocabulary_consecutive_failures
+                >= self.open_vocabulary_failure_limit
+            ):
+                raise RuntimeError(
+                    'open-vocabulary perception failed '
+                    f'{self.open_vocabulary_consecutive_failures} consecutive frames; '
+                    f'last error: {type(error).__name__}: {error}'
+                ) from error
             return isaac
 
     def action_for(
@@ -988,8 +1052,27 @@ class MapNavigationRuntime:
                 'violated_static_obstacle_labels': sorted(self._violated_static_labels),
                 'semantic_target': self.semantic_target,
                 'semantic_detection_mode': self.semantic_detection_mode.value,
+                'semantic_detection_effective_mode': (
+                    SemanticDetectionMode.ISAAC.value
+                    if self.semantic_detection_mode is SemanticDetectionMode.HYBRID
+                    and self.open_vocabulary_perception is None
+                    else self.semantic_detection_mode.value
+                ),
+                'open_vocabulary_available': self.open_vocabulary_perception is not None,
+                'open_vocabulary_startup_error': self.open_vocabulary_startup_error,
+                'open_vocabulary_attempts': self.open_vocabulary_attempts,
                 'open_vocabulary_frames': self.open_vocabulary_frames,
                 'open_vocabulary_failures': self.open_vocabulary_failures,
+                'open_vocabulary_rate_limited_frames': self.open_vocabulary_rate_limited_frames,
+                'open_vocabulary_empty_frames': self.open_vocabulary_empty_frames,
+                'open_vocabulary_detections': self.open_vocabulary_detections,
+                'open_vocabulary_partial_failures': self.open_vocabulary_partial_failures,
+                'open_vocabulary_consecutive_failures': self.open_vocabulary_consecutive_failures,
+                'open_vocabulary_last_error': self.open_vocabulary_last_error,
+                'open_vocabulary_last_partial_errors': self.open_vocabulary_last_partial_errors,
+                'open_vocabulary_last_labels': self.open_vocabulary_last_labels,
+                'open_vocabulary_last_detection_step': self.open_vocabulary_last_detection_step,
+                'open_vocabulary_last_success_step': self.open_vocabulary_last_success_step,
                 'voronoi_plans': self.voronoi_plan_count,
                 'voronoi_plan_fallbacks': self.voronoi_plan_fallbacks,
             }
