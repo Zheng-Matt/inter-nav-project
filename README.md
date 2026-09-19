@@ -79,6 +79,27 @@ $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
 
 **2. Open vocabulary only** — requires the two HTTP services on the perception GPU:
 
+Start the services in two separate terminals (replace `cuda:1` with the
+perception GPU you selected):
+
+```bash
+$QWEN3_PYTHON grutopia/demo/serve_semantic_perception.py grounding-dino \
+  --host 127.0.0.1 --port 12181 --device cuda:1
+```
+
+```bash
+$QWEN3_PYTHON grutopia/demo/serve_semantic_perception.py mobile-sam \
+  --host 127.0.0.1 --port 12183 --device cuda:1 \
+  --mobile-sam-checkpoint grutopia/assets/models/mobile_sam.pt
+```
+
+Verify both endpoints before starting Isaac:
+
+```bash
+curl -fsS http://127.0.0.1:12181/health
+curl -fsS http://127.0.0.1:12183/health
+```
+
 ```bash
 $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
   --gpu 0 \
@@ -106,17 +127,24 @@ How the three modes differ at runtime:
 
 - `isaac` ignores the open-vocabulary stack entirely; GroundingDINO is never
   queried, so `open_vocabulary_frames` stays `0`.
-- `open_vocab` never falls back to simulator labels. If the services are
-  unreachable the frame yields no detections and `open_vocabulary_failures`
-  increments, so a degraded run cannot be mistaken for a good one. Configuring
-  `open_vocab` without a perception stack is rejected at startup.
+- `open_vocab` never falls back to simulator labels. It checks GroundingDINO,
+  MobileSAM, and local CLIP before Isaac starts, and rejects an unavailable
+  stack with an explicit error. If a ready service later fails three
+  consecutive RGB queries, the run stops instead of exploring with an empty
+  semantic graph.
 - `hybrid` merges both sources per object: a scene-graph node keeps every
   source that agreed on it and geometry comes from the denser observation.
-  It degrades to Isaac-only when the services are unreachable.
+  It reports a failed preflight and degrades to Isaac-only when the services
+  are unreachable.
 
 Recorded runs identify their source, so results stay comparable: every
 scene-graph node carries `sources` (`isaac`, `open_vocabulary`, or both) and
 every statistics block reports `semantic_detection_mode`.
+For degraded hybrid runs, `semantic_detection_effective_mode`,
+`open_vocabulary_available`, and `open_vocabulary_startup_error` preserve what
+actually ran in the saved JSON.
+The progress statistics also expose attempts, completed queries, detections,
+partial candidate failures, the last detected labels, and the last exception.
 
 An empty programmatic room is available with `--scene programmatic`.
 
@@ -127,6 +155,10 @@ and writes to `--record-dir`:
 - matching `*_preview.png`
 - `final_map.json` (Voronoi graph, decisions, trajectory)
 - `final_map.npz` (occupancy layers and skeleton)
+
+If `--map-output` is omitted, it automatically resolves to
+`<record-dir>/final_map`, so videos and map metadata cannot silently land in
+different run directories.
 
 For staged offline, geometry-only, and fused semantic validation, follow the
 [navigation and semantic regression test plan](docs/navigation-semantic-regression-test-plan.md).

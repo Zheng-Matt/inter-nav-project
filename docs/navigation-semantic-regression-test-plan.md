@@ -6,7 +6,7 @@ checks from Isaac Sim behaviour that cannot be established by unit tests.
 
 ## Scope
 
-The test campaign must answer four questions:
+The test campaign must answer five questions:
 
 1. Does a changed goal invalidate a stale path while an unchanged goal keeps
    the current plan?
@@ -16,6 +16,8 @@ The test campaign must answer four questions:
    same-frame deduplication and later scene-graph merges?
 4. Can `target_match_method` and `target_sources` be interpreted independently
    in a completed exploration run?
+5. Does `open_vocab` reject an unavailable stack before Isaac starts and
+   preserve valid objects when another candidate fails?
 
 Pure-pursuit gains, velocity limits, waypoint spacing, and planner/runtime
 collision geometry are not changed in this patch. They are observed during the
@@ -26,18 +28,21 @@ live runs below, but any tuning should be proposed and reviewed separately.
 Run the focused suite before every simulator run:
 
 ```bash
-python -m unittest \
-  tests.test_point_navigation_component \
-  tests.test_interaction_navigation_mapping \
-  tests.test_semantic_exploration_component \
-  tests.test_open_vocabulary_perception
+TEST_PYTHON="${ISAAC_PYTHON:-python}"
+for test_file in \
+  test_point_navigation_component.py \
+  test_interaction_navigation_mapping.py \
+  test_semantic_exploration_component.py \
+  test_open_vocabulary_perception.py; do
+  "$TEST_PYTHON" -m unittest discover -s tests -p "$test_file"
+done
 ```
 
 Then run the complete suite in the repository's configured development
 environment:
 
 ```bash
-python -m unittest discover -s tests
+"$TEST_PYTHON" -m unittest discover -s tests
 ```
 
 Acceptance criteria:
@@ -85,6 +90,11 @@ Start GroundingDINO and MobileSAM as documented in
 modes with separate output directories so their results can be compared:
 
 ```bash
+curl -fsS http://127.0.0.1:12181/health
+curl -fsS http://127.0.0.1:12183/health
+```
+
+```bash
 for mode in isaac open_vocab hybrid; do
   $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
     --gpu 0 \
@@ -105,12 +115,15 @@ done
 For the selected target and nearby scene-graph nodes, record:
 
 - `semantic_detection_mode`, and that it matches the requested `--detection-mode`;
+- `semantic_detection_effective_mode`, availability, and startup error for a
+  degraded `hybrid` run;
 - `target_match`, `target_match_method`, and `target_sources`;
 - node label, confidence, embedding presence, observation count, point count,
   and `last_seen_step`;
 - whether same-frame Isaac and Open-Vocabulary detections produce one
   observation with both sources rather than two observations;
-- `open_vocabulary_frames` and `open_vocabulary_failures`.
+- attempts, completed/rate-limited/empty frames, detections, partial failures,
+  last labels, last success step, and the last error.
 
 Acceptance criteria:
 
@@ -125,10 +138,12 @@ Acceptance criteria:
 ## Stage 4: Failure and repeatability checks
 
 Run `hybrid` once with the Open-Vocabulary services unavailable and confirm that
-the Isaac semantic fallback still completes without losing source attribution,
-then run `open_vocab` the same way and confirm it reports the failure instead of
-falling back. Then run the full semantic scenario at least three times with
-separate output directories.
+the preflight reports the cause before the Isaac-only fallback continues. Then
+run `open_vocab` the same way and confirm it exits before Isaac starts, with no
+videos or empty 12000-step map presented as a valid run. Restart both services,
+interrupt one after startup, and confirm three consecutive runtime failures
+abort with the underlying exception. Then run the full semantic scenario at
+least three times with separate output directories.
 
 Compare across runs:
 

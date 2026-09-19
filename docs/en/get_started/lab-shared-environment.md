@@ -77,8 +77,9 @@ takes `isaac` (ground truth only), `open_vocab` (VLM detections only), or
 
 Pick three free GPUs (example: `0`, `1`, `2`).
 
-Optional: start GroundingDINO and MobileSAM in two other terminals. If they
-are down, exploration still runs with Isaac semantic labels.
+Start GroundingDINO and MobileSAM in two other terminals. They are required for
+`open_vocab`; only `hybrid` may degrade to Isaac semantic labels when they are
+down.
 
 ```bash
 cd /path/to/your/inter-nav-project
@@ -95,6 +96,13 @@ source /data20t/embodied/share/inter-nav/env.sh
 $QWEN3_PYTHON grutopia/demo/serve_semantic_perception.py mobile-sam \
   --host 127.0.0.1 --port 12183 --device cuda:1 \
   --mobile-sam-checkpoint grutopia/assets/models/mobile_sam.pt
+```
+
+In a third terminal, verify readiness before launching Isaac:
+
+```bash
+curl -fsS http://127.0.0.1:12181/health
+curl -fsS http://127.0.0.1:12183/health
 ```
 
 Then run the demo:
@@ -126,4 +134,6 @@ and writes videos plus `final_map.json` / `final_map.npz` under
 | `QWEN3_PYTHON` points at Isaac Python | Source `env.sh` again. Qwen must be the `CapNav` interpreter. |
 | `No device could be created` / CUDA bad state | Unset `CUDA_VISIBLE_DEVICES`. Pass `--gpu N` only. |
 | CUDA OOM | Give Isaac, perception, and Qwen different free GPUs. |
+| `open_vocab requires ready ... before the run starts` | Start both HTTP services, check ports `12181` and `12183`, and confirm the CLIP weights are visible through `HF_HOME`. |
+| `open-vocabulary perception failed 3 consecutive frames` | Read `open_vocabulary_last_error` in the progress/error output; check the named service and GPU before retrying. |
 | First launch is slow | Full GRScenes material compile takes several minutes. Later runs are faster. |

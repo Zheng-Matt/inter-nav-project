@@ -17,8 +17,8 @@ The implementation adds three layers above the existing RGB-D/LiDAR map:
    reachable topology nodes.
 2. `OpenVocabularyPerception` sends RGB frames to GroundingDINO and MobileSAM,
    associates every mask pixel with its aligned world-space RGB-D point, and
-   stores normalized CLIP embeddings. Isaac semantic boxes remain a
-   deterministic fallback when a model service is unavailable.
+   stores normalized CLIP embeddings. Isaac semantic boxes are used only in
+   `isaac` and `hybrid`; `open_vocab` never receives ground-truth fallback.
 3. `AdaptiveExplorationPlanner` scores frontier information gain, path cost,
    clearance, degree, extension, direction, visits, failures, and dead ends.
    When semantic evidence is available, an isolated local Qwen3-8B worker
@@ -44,10 +44,12 @@ GroundingDINO and MobileSAM use these endpoints:
 - `http://localhost:12181/gdino`
 - `http://localhost:12183/mobile_sam`
 
-Start them with `grutopia/demo/serve_semantic_perception.py`. If those
-endpoints or CLIP weights are unavailable, `hybrid` exploration continues with
-Isaac semantic labels. If Qwen3 is unavailable, frontier selection continues in
-deterministic geometric mode.
+Start them with `grutopia/demo/serve_semantic_perception.py` as shown in
+[lab-shared-environment.md](lab-shared-environment.md), then verify both
+`/health` endpoints. If an endpoint or CLIP weight is unavailable, `hybrid`
+reports the failed preflight and continues with Isaac semantic labels;
+`open_vocab` exits before Isaac starts. If Qwen3 is unavailable, frontier
+selection continues in deterministic geometric mode.
 
 `--detection-mode` chooses the detection source:
 
@@ -57,9 +59,11 @@ deterministic geometric mode.
 | `open_vocab` | GroundingDINO + MobileSAM only | yes |
 | `hybrid` (default) | both, fused per object | yes, but degrades to `isaac` |
 
-`open_vocab` never falls back to simulator labels, so a run with unreachable
-services reports `open_vocabulary_failures` instead of quietly using ground
-truth. Every scene-graph node records which sources agreed on it.
+`open_vocab` never falls back to simulator labels. A ready stack that later
+fails three consecutive RGB queries aborts the run with the underlying error
+instead of silently producing an empty scene graph. A single bad candidate
+mask is recorded as a partial failure without discarding other valid objects
+from the same frame. Every scene-graph node records which sources agreed on it.
 
 ## Run
 
@@ -121,4 +125,18 @@ $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
 ```
 
 Outputs under the `--record-dir` include synchronized videos plus
-`final_map.npz` and `final_map.json`.
+`final_map.npz` and `final_map.json`. When `--map-output` is omitted, its
+default is derived from `--record-dir` rather than from a fixed shared folder.
+
+Progress and final statistics distinguish `open_vocabulary_attempts`, completed
+`open_vocabulary_frames`, rate-limited and empty frames, total detections,
+partial candidate failures, the last successful step, last detected labels,
+the last candidate errors, and the last frame exception. `target_found=false` with
+`open_vocabulary_last_labels=["refrigerator"]` means the label was seen but has
+not yet accumulated the two stable scene-graph observations required to lock
+the navigation target.
+
+For `hybrid`, compare `semantic_detection_mode` with
+`semantic_detection_effective_mode`. If preflight fell back to Isaac, the saved
+statistics also contain `open_vocabulary_available=false` and the exact
+`open_vocabulary_startup_error`; terminal output is not the only evidence.
