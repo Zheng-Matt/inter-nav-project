@@ -221,6 +221,35 @@ class SemanticVoronoiTest(unittest.TestCase):
         )
         self.assertEqual(set(incremental.skeleton_cells), set(reference.skeleton_cells))
 
+    def test_incremental_distant_changes_use_separate_windows(self):
+        occupancy = _occupancy(rows=120, columns=220)
+        occupancy.observed[20:40, 10:60] = True
+        occupancy.observed[80:100, 160:210] = True
+        config = SemanticVoronoiConfig(spur_length=0.0)
+        graph = SemanticVoronoiGraph(occupancy, config)
+        graph.snapshot()
+
+        # Two small additions are far enough apart that their guarded windows
+        # do not overlap. A single bounding box would span almost the full map.
+        occupancy.observed[35:45, 30:35] = True
+        occupancy.observed[75:85, 180:185] = True
+        occupancy.revision += 1
+        incremental = graph.update()
+
+        statistics = graph.statistics()
+        self.assertEqual(statistics['last_changed_components'], 2)
+        self.assertEqual(statistics['last_window_count'], 2)
+        self.assertEqual(statistics['incremental_updates'], 1)
+        self.assertEqual(statistics['incremental_fallbacks'], 0)
+        self.assertEqual(statistics['incremental_fallback_reasons'], {})
+        self.assertIsNone(statistics['last_incremental_fallback_reason'])
+        self.assertLess(statistics['last_window_fraction'], config.incremental_max_window_fraction)
+        self.assertGreaterEqual(statistics['last_window_work_cells'], statistics['last_window_cells'])
+        self.assertGreater(statistics['last_window_to_changed_ratio'], 1.0)
+
+        reference = SemanticVoronoiGraph(occupancy, config).snapshot()
+        self.assertEqual(set(incremental.skeleton_cells), set(reference.skeleton_cells))
+
     def test_incremental_shortcut_reuses_graph_when_traversable_unchanged(self):
         occupancy = _occupancy(rows=120, columns=160)
         occupancy.observed[20:27, 10:150] = True
@@ -233,6 +262,9 @@ class SemanticVoronoiTest(unittest.TestCase):
         self.assertEqual(graph.statistics()['builds'], 1)
         self.assertEqual(graph.statistics()['unchanged_updates'], 1)
         self.assertEqual(graph.statistics()['incremental_updates'], 0)
+        self.assertEqual(graph.statistics()['last_window_count'], 0)
+        self.assertEqual(graph.statistics()['last_window_cells'], 0)
+        self.assertIsNone(graph.statistics()['last_incremental_fallback_reason'])
         self.assertEqual(refreshed.revision, occupancy.revision)
         self.assertEqual(first.nodes, refreshed.nodes)
         self.assertEqual(first.edges, refreshed.edges)
@@ -251,7 +283,28 @@ class SemanticVoronoiTest(unittest.TestCase):
         self.assertEqual(statistics['builds'], 2)
         self.assertEqual(statistics['incremental_updates'], 0)
         self.assertEqual(statistics['incremental_fallbacks'], 1)
+        fallback_reason = statistics['last_incremental_fallback_reason']
+        self.assertIsNotNone(fallback_reason)
+        self.assertEqual(statistics['incremental_fallback_reasons'][fallback_reason], 1)
         reference = SemanticVoronoiGraph(occupancy, SemanticVoronoiConfig(spur_length=0.0)).snapshot()
+        self.assertEqual(set(rebuilt.skeleton_cells), set(reference.skeleton_cells))
+
+    def test_incremental_reach_uses_old_clearance_for_large_window_fallback(self):
+        occupancy = _occupancy(rows=160, columns=180)
+        occupancy.observed.fill(True)
+        config = SemanticVoronoiConfig(spur_length=0.0, region_segmentation=False)
+        graph = SemanticVoronoiGraph(occupancy, config)
+        graph.snapshot()
+
+        occupancy.log_odds[80, 90] = 4.0
+        occupancy.revision += 1
+        rebuilt = graph.update()
+
+        statistics = graph.statistics()
+        self.assertEqual(statistics['incremental_fallbacks'], 1)
+        self.assertEqual(statistics['last_incremental_fallback_reason'], 'window_fraction')
+        self.assertEqual(statistics['incremental_fallback_reasons'].get('reach_not_converged', 0), 0)
+        reference = SemanticVoronoiGraph(occupancy, config).snapshot()
         self.assertEqual(set(rebuilt.skeleton_cells), set(reference.skeleton_cells))
 
     def test_two_rooms_connected_by_narrow_doorway_form_regions(self):
