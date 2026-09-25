@@ -103,7 +103,7 @@ def build_run_summary(
     )
     voronoi = stats.get('semantic_voronoi', {})
     return {
-        'schema_version': 1,
+        'schema_version': 2,
         'status': status,
         'reason': reason,
         'arrival_verified': bool(arrived),

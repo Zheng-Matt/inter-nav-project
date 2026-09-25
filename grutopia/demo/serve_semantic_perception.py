@@ -49,7 +49,13 @@ def _grounding_dino_app(args):
 
     @app.get('/health')
     def health():
-        return jsonify({'ready': True, 'service': 'grounding-dino'})
+        return jsonify({
+            'ready': True,
+            'service': 'grounding-dino',
+            'model': args.grounding_dino_model,
+            'box_threshold': args.box_threshold,
+            'text_threshold': args.text_threshold,
+        })
 
     @app.post('/gdino')
     def detect():
@@ -102,7 +108,11 @@ def _mobile_sam_app(args):
 
     @app.get('/health')
     def health():
-        return jsonify({'ready': True, 'service': 'mobile-sam'})
+        return jsonify({
+            'ready': True,
+            'service': 'mobile-sam',
+            'checkpoint': args.mobile_sam_checkpoint,
+        })
 
     @app.post('/mobile_sam')
     def segment():

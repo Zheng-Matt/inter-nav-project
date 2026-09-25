@@ -7,6 +7,7 @@ import os
 import time
 import traceback
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence, Tuple
 
@@ -369,6 +370,9 @@ def run_go2_semantic_exploration(
         summary_path,
         write_run_summary,
     )
+    from grutopia_extension.interactive_navigation.semantic_run_artifacts import (
+        SemanticRunArtifacts,
+    )
     from grutopia_extension.interactive_navigation.semantic_voronoi import SemanticVoronoiConfig
 
     # Isaac may enable root DEBUG logging; retain HTTP warnings without
@@ -381,13 +385,17 @@ def run_go2_semantic_exploration(
     last_step = None
     stop_reason = 'incomplete'
     error_type = None
+    artifacts = SemanticRunArtifacts(run.record_dir, run, profile) if run.record_dir else None
     run_summary_path = summary_path(run.record_dir, run.map_output)
     if run_summary_path is not None:
         write_run_summary(
             run_summary_path,
             {
-                'schema_version': 1,
+                'schema_version': 2,
                 'status': 'running',
+                'completion_recorded': False,
+                'run_id': None if artifacts is None else artifacts.run_id,
+                'started_at': None if artifacts is None else artifacts.started_at,
                 'target_query': run.target_query,
                 'detection_mode': run.semantic_detection_mode,
                 'max_steps': run.max_steps,
@@ -541,6 +549,15 @@ def run_go2_semantic_exploration(
             perception=perception,
             scorer=scorer,
         )
+        if artifacts is not None:
+            health = (
+                {} if perception is None else
+                getattr(perception.detector, 'last_health_payloads', {})
+            )
+            artifacts.set_runtime_details(
+                component, perception=perception, services=health,
+                qwen_active=scorer is not None,
+            )
         # Boxes are kept for collision statistics only: the exploration map
         # must start empty and grow purely from online sensing.
         component.mapping.seed_static_obstacles(
@@ -611,6 +628,12 @@ def run_go2_semantic_exploration(
                 if recorder is not None:
                     recorder.record_perception(step, robot_observation, component.mapping)
             t2 = time.perf_counter() if timing is not None else 0.0
+            if artifacts is not None:
+                artifacts.observe(
+                    step, component, robot_observation,
+                    sample=step % run.record_every == 0,
+                    heartbeat=step % run.log_every == 0,
+                )
             if step % run.log_every == 0:
                 print(
                     json.dumps(component.progress_event(step, robot_observation)),
@@ -634,6 +657,8 @@ def run_go2_semantic_exploration(
                 break
             t4 = time.perf_counter() if timing is not None else 0.0
             action = component.action(step, robot_observation)
+            if artifacts is not None:
+                artifacts.observe_plans(step, component)
             t5 = time.perf_counter() if timing is not None else 0.0
             robot_observation, _, terminated, _, _ = env.step(action)
             if timing is not None:
@@ -668,10 +693,22 @@ def run_go2_semantic_exploration(
             flush=True,
         )
     finally:
-        if run_summary_path is not None:
-            write_run_summary(
-                run_summary_path,
-                build_run_summary(
+        artifact_errors = []
+        for name, cleanup in (
+            ('trace', None if artifacts is None else lambda: artifacts.finish(last_step, component, robot_observation)),
+            ('video', None if recorder is None else recorder.close),
+            ('final_map', None if component is None else lambda: component.save(run.map_output)),
+        ):
+            if cleanup is None:
+                continue
+            try:
+                cleanup()
+            except Exception as cleanup_error:
+                traceback.print_exc()
+                artifact_errors.append({'artifact': name, 'error': type(cleanup_error).__name__})
+        try:
+            if run_summary_path is not None:
+                summary = build_run_summary(
                     target_query=run.target_query,
                     detection_mode=run.semantic_detection_mode,
                     max_steps=run.max_steps,
@@ -683,18 +720,28 @@ def run_go2_semantic_exploration(
                     stop_reason=stop_reason,
                     error_type=error_type,
                     exit_code=result_code,
+                )
+                summary.update({
+                    'completion_recorded': True,
+                    'run_id': None if artifacts is None else artifacts.run_id,
+                    'started_at': None if artifacts is None else artifacts.started_at,
+                    'finished_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+                    'artifacts_complete': not artifact_errors,
+                    'artifact_errors': artifact_errors,
+                })
+                write_run_summary(run_summary_path, summary)
+        finally:
+            for cleanup in (
+                None if qwen_worker is None else qwen_worker.close,
+                env.close if env is not None else (
+                    None if runtime is None else runtime.simulation_app.close
                 ),
-            )
-        if recorder is not None:
-            recorder.close()
-        if component is not None:
-            component.save(run.map_output)
-        if qwen_worker is not None:
-            qwen_worker.close()
-        if env is not None:
-            env.close()
-        elif runtime is not None:
-            runtime.simulation_app.close()
+            ):
+                if cleanup is not None:
+                    try:
+                        cleanup()
+                    except Exception:
+                        traceback.print_exc()
     return result_code
 
 

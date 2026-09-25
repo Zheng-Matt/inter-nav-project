@@ -28,9 +28,7 @@ $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
   --gpu 0 \
   --perception-gpu 1 \
   --qwen-device cuda:2 \
-  --target refrigerator \
-  --record-dir grutopia/results/go2_semantic_exploration \
-  --map-output grutopia/results/go2_semantic_exploration/final_map
+  --target refrigerator
 ```
 
 Do not set `CUDA_VISIBLE_DEVICES`. Use `$ISAAC_PYTHON`, not `python`.
@@ -45,9 +43,7 @@ python grutopia/demo/go2_semantic_exploration.py \
   --gpu 0 \
   --perception-gpu 1 \
   --qwen-device cuda:2 \
-  --target refrigerator \
-  --record-dir grutopia/results/go2_semantic_exploration \
-  --map-output grutopia/results/go2_semantic_exploration/final_map
+  --target refrigerator
 ```
 
 `--gpu` is Isaac Sim, `--perception-gpu` is CLIP, `--qwen-device` is the
@@ -73,8 +69,7 @@ $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
   --gpu 0 \
   --detection-mode isaac \
   --no-qwen \
-  --target refrigerator \
-  --record-dir grutopia/results/go2_semantic_exploration_isaac
+  --target refrigerator
 ```
 
 **2. Open vocabulary only** — requires the two HTTP services on the perception GPU:
@@ -106,8 +101,7 @@ $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
   --perception-gpu 1 \
   --qwen-device cuda:2 \
   --detection-mode open_vocab \
-  --target refrigerator \
-  --record-dir grutopia/results/go2_semantic_exploration_open_vocab
+  --target refrigerator
 ```
 
 **3. Hybrid** — ground-truth labels fused with open-vocabulary detections
@@ -119,8 +113,7 @@ $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
   --perception-gpu 1 \
   --qwen-device cuda:2 \
   --detection-mode hybrid \
-  --target refrigerator \
-  --record-dir grutopia/results/go2_semantic_exploration_hybrid
+  --target refrigerator
 ```
 
 How the three modes differ at runtime:
@@ -150,18 +143,27 @@ Periodic console progress stays compact.
 An empty programmatic room is available with `--scene programmatic`.
 
 A finished run prints `semantic_exploration_result` with `"success": true`
-and writes to `--record-dir`:
+and writes to a new timestamped directory under `grutopia/results/`:
 
 - `combined.mp4`, `robot_rgb.mp4`, `third_person.mp4`, `map_topdown.mp4`
 - `groundingdino.mp4` and `groundingdino_detections.jsonl` when the detector is queried
 - matching `*_preview.png`
 - `run_summary.json` (terminal status, target confirmation, arrival distances)
+- `manifest.json`, `events.jsonl`, `trace.csv`, `progress.json` (comparison and diagnosis)
+- `video_frames.jsonl` (regular video frame-to-step index)
 - `final_map.json` (Voronoi graph, decisions, trajectory)
 - `final_map.npz` (occupancy layers and skeleton)
 
 If `--map-output` is omitted, it automatically resolves to
 `<record-dir>/final_map`, so videos and map metadata cannot silently land in
 different run directories.
+An explicit `--record-dir` must be new; the runner refuses to overwrite an
+earlier experiment. To build a CSV across runs:
+
+```bash
+python grutopia/demo/summarize_semantic_runs.py grutopia/results \
+  --output grutopia/results/semantic_runs.csv
+```
 
 For staged offline, geometry-only, and fused semantic validation, follow the
 [navigation and semantic regression test plan](docs/navigation-semantic-regression-test-plan.md).

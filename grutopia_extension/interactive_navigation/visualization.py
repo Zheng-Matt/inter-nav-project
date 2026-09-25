@@ -192,6 +192,10 @@ class InteractionVideoRecorder:
         self._last_frames = {}
         self._perception_events = None
         self._last_perception_step = None
+        self._perception_frame_count = 0
+        self._video_frames = (self.output_dir / 'video_frames.jsonl').open(
+            'w', encoding='utf-8', buffering=1
+        )
 
     def _writer(self, filename: str, size):
         writer = cv2.VideoWriter(
@@ -241,6 +245,11 @@ class InteractionVideoRecorder:
         self._writers['third_person'].write(third_person_frame)
         self._writers['map_topdown'].write(map_frame)
         self._writers['combined'].write(combined)
+        self._video_frames.write(json.dumps({
+            'frame_index': self.frame_count,
+            'step': step,
+            'state': state_name,
+        }) + '\n')
         self._last_frames = {
             'robot_rgb': rgb_frame,
             'third_person': third_person_frame,
@@ -276,10 +285,12 @@ class InteractionVideoRecorder:
         self._last_perception_step = step
         if self._perception_events is None:
             self._perception_events = (self.output_dir / 'groundingdino_detections.jsonl').open(
-                'w', encoding='utf-8'
+                'w', encoding='utf-8', buffering=1
             )
             self._writers['groundingdino'] = self._writer('groundingdino.mp4', self.rgb_size)
-        self._perception_events.write(json.dumps(debug_frame, ensure_ascii=False) + '\n')
+        self._perception_events.write(json.dumps({
+            **debug_frame, 'video_frame_index': self._perception_frame_count,
+        }, ensure_ascii=False) + '\n')
         frame = self._render_camera(
             step,
             'perception',
@@ -291,10 +302,12 @@ class InteractionVideoRecorder:
         )
         self._writers['groundingdino'].write(frame)
         self._last_frames['groundingdino'] = frame
+        self._perception_frame_count += 1
 
     def close(self):
         if self._perception_events is not None:
             self._perception_events.close()
+        self._video_frames.close()
         for writer in self._writers.values():
             writer.release()
         for name, frame in self._last_frames.items():

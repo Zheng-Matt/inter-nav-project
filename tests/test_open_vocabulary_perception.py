@@ -173,6 +173,10 @@ class OpenVocabularyPerceptionTest(unittest.TestCase):
             ['http://localhost:12181/health', 'http://localhost:12183/health'],
         )
         self.assertEqual(
+            backend.last_health_payloads['grounding_dino']['service'],
+            'grounding-dino',
+        )
+        self.assertEqual(
             [call[1]['timeout'] for call in session.get_calls],
             [0.125, 0.125],
         )

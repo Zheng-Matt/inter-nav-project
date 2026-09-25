@@ -112,9 +112,7 @@ $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
   --gpu 0 \
   --perception-gpu 1 \
   --qwen-device cuda:2 \
-  --target refrigerator \
-  --record-dir grutopia/results/go2_semantic_exploration \
-  --map-output grutopia/results/go2_semantic_exploration/final_map
+  --target refrigerator
 ```
 
 `--gpu` is Isaac Sim, `--perception-gpu` is CLIP, `--qwen-device` is the
@@ -122,7 +120,8 @@ Qwen3-8B worker. Change `--target` to `chair` or `plant` if you want.
 
 A finished run prints `semantic_exploration_result` with `"success": true`
 and writes videos plus `final_map.json` / `final_map.npz` under
-`--record-dir`.
+a new timestamped `grutopia/results/` directory. Pass `--record-dir` only
+when you need a specific new directory name.
 
 ## Troubleshooting
 

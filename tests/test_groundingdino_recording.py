@@ -73,7 +73,13 @@ class GroundingDinoRecordingTest(unittest.TestCase):
 
             events = (Path(directory) / 'groundingdino_detections.jsonl').read_text().splitlines()
             self.assertEqual(len(events), 1)
-            self.assertEqual(json.loads(events[0]), debug_frame)
+            self.assertEqual(json.loads(events[0]), {**debug_frame, 'video_frame_index': 0})
+            video_frames = [
+                json.loads(line) for line in
+                (Path(directory) / 'video_frames.jsonl').read_text().splitlines()
+            ]
+            self.assertEqual([frame['step'] for frame in video_frames], [24, 25])
+            self.assertEqual([frame['frame_index'] for frame in video_frames], [0, 1])
             self.assertEqual(len(writers['groundingdino.mp4'].frames), 1)
             frame = writers['groundingdino.mp4'].frames[0]
             self.assertEqual(tuple(frame[60, 80]), (220, 60, 230))

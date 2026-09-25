@@ -91,6 +91,7 @@ class AgentVLMBackend:
     ) -> None:
         self.config = config or OpenVocabularyPerceptionConfig()
         self._session = session or requests
+        self.last_health_payloads: dict[str, dict] = {}
 
     @staticmethod
     def _encode_image(image: np.ndarray) -> str:
@@ -139,6 +140,14 @@ class AgentVLMBackend:
             if payload.get('ready') is not True:
                 raise RuntimeError(f'{name} service is not ready at {health_url}')
             status[name] = health_url
+            self.last_health_payloads[name] = {
+                'url': health_url,
+                **{
+                    key: payload[key] for key in (
+                        'service', 'model', 'checkpoint', 'box_threshold', 'text_threshold',
+                    ) if key in payload
+                },
+            }
         return status
 
     def detect(self, image: np.ndarray, caption: str) -> list[dict]:
