@@ -1129,6 +1129,10 @@ class MapNavigationRuntime:
             payload['scene_graph'] = {
                 'nodes': [asdict(node) for node in graph.nodes],
                 'edges': [asdict(edge) for edge in graph.edges],
+                'label_counts': {
+                    node.node_id: self.map.scene_graph.label_counts(node.node_id)
+                    for node in graph.nodes if node.kind == 'object'
+                },
             }
         if self.semantic_voronoi is not None:
             payload['semantic_voronoi'] = self.semantic_voronoi.to_dict()
@@ -1266,6 +1270,10 @@ def _deduplicate_semantic_detections(detections) -> tuple:
             point_count=max(int(previous.point_count), int(detection.point_count)),
             step=max(int(previous.step), int(detection.step)),
             sources=tuple(dict.fromkeys((*previous.sources, *detection.sources))),
+            label_evidence=tuple(dict.fromkeys((
+                *(previous.label_evidence or (previous.label,)),
+                *(detection.label_evidence or (detection.label,)),
+            ))),
         )
     return tuple(merged)
 

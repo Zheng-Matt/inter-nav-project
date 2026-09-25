@@ -6,12 +6,18 @@ from pathlib import Path
 import numpy as np
 
 from grutopia_extension.interactive_navigation.mapping import MappingConfig, SemanticDetection
+from grutopia_extension.interactive_navigation.mapping_runtime import _deduplicate_semantic_detections
 from grutopia_extension.interactive_navigation.semantic_exploration_component import (
     SemanticExplorationComponent,
     SemanticExplorationConfig,
     SemanticExplorationStatus,
 )
 from grutopia_extension.interactive_navigation.semantic_voronoi import SemanticVoronoiConfig
+from grutopia_extension.interactive_navigation.semantic_run_summary import (
+    build_run_summary,
+    summary_path,
+    write_run_summary,
+)
 
 
 class _FakeTextEmbeddingPerception:
@@ -19,7 +25,8 @@ class _FakeTextEmbeddingPerception:
         return np.array([1.0, 0.0, 0.0], dtype=np.float32)
 
 
-def _component(target='carry object', frontier_selection_interval=1, perception=None):
+def _component(target='carry object', frontier_selection_interval=1, perception=None,
+               confirmation_observations=2):
     return SemanticExplorationComponent(
         SemanticExplorationConfig(
             target_query=target,
@@ -32,6 +39,7 @@ def _component(target='carry object', frontier_selection_interval=1, perception=
             ),
             voronoi=SemanticVoronoiConfig(spur_length=0.0),
             target_min_observations=2,
+            target_confirmation_min_label_observations=confirmation_observations,
             topology_update_interval=1,
             frontier_selection_interval=frontier_selection_interval,
         ),
@@ -170,6 +178,149 @@ class SemanticExplorationComponentTest(unittest.TestCase):
         self.assertEqual(component.statistics()['target_sources'], ['isaac'])
         self.assertIsNotNone(component.current_goal)
 
+    def test_single_relabel_does_not_confirm_refrigerator(self):
+        component = _component('refrigerator', perception=_FakeTextEmbeddingPerception())
+        component.mapping.map.occupancy.observed[8:32, 5:45] = True
+        for _ in range(4):
+            component.mapping.map.scene_graph.update_detections(
+                [SemanticDetection('door', (3.0, 1.5, 0.7), confidence=0.2, embedding=(1.0, 0.0, 0.0))]
+            )
+        component.mapping.map.scene_graph.update_detections(
+            [SemanticDetection('refrigerator', (3.0, 1.5, 0.7), confidence=0.9, embedding=(1.0, 0.0, 0.0))]
+        )
+        observation = {'position': (1.0, 1.5, 0.4), 'orientation': (1.0, 0.0, 0.0, 0.0), 'sensors': {}}
+        component.update(0, observation)
+        self.assertEqual(component.target_node.label, 'refrigerator')
+        self.assertEqual(component.statistics()['target_label_support'], 1)
+        self.assertFalse(component.target_confirmed)
+        near = dict(observation, position=component.current_goal)
+        self.assertEqual(component.evaluate(1, near).status, SemanticExplorationStatus.RUNNING)
+        component.update(1, near)
+        self.assertIsNone(component.target_node)
+
+    def test_repeated_refrigerator_detections_survive_door_majority(self):
+        component = _component(
+            'refrigerator',
+            perception=_FakeTextEmbeddingPerception(),
+            confirmation_observations=8,
+        )
+        component.mapping.map.occupancy.observed[8:32, 5:45] = True
+        graph = component.mapping.map.scene_graph
+        for step in range(30):
+            graph.update_detections([SemanticDetection(
+                'door', (3.0, 1.5, 0.7), confidence=0.55,
+                embedding=(1.0, 0.0), step=step,
+            )])
+        for step in range(7):
+            graph.update_detections([SemanticDetection(
+                'refrigerator door', (3.0, 1.5, 0.7), confidence=0.40,
+                embedding=(1.0, 0.0), step=30 + step,
+            )])
+        observation = {
+            'position': (1.0, 1.5, 0.4),
+            'orientation': (1.0, 0.0, 0.0, 0.0),
+            'sensors': {},
+        }
+        component.update(40, observation)
+        self.assertIsNone(component.target_node)
+        self.assertFalse(component.target_confirmed)
+
+        graph.update_detections([SemanticDetection(
+            'refrigerator door', (3.0, 1.5, 0.7), confidence=0.40,
+            embedding=(1.0, 0.0), step=41,
+        )])
+        component.update(41, observation)
+        self.assertEqual(component.target_node.label, 'door')
+        self.assertEqual(component.statistics()['target_match'], 'lexical')
+        self.assertEqual(component.statistics()['target_label_support'], 8)
+        self.assertTrue(component.target_confirmed)
+        self.assertEqual(
+            component.evaluate(42, dict(observation, position=component.current_goal)).status,
+            SemanticExplorationStatus.SUCCEEDED,
+        )
+
+    def test_fused_door_frames_confirm_refrigerator_at_eighth_frame(self):
+        component = _component('refrigerator', confirmation_observations=8)
+        component.mapping.map.occupancy.observed[8:32, 5:45] = True
+        observation = {
+            'position': (1.0, 1.5, 0.4),
+            'orientation': (1.0, 0.0, 0.0, 0.0),
+            'sensors': {},
+        }
+        for step in range(8):
+            fused = _deduplicate_semantic_detections((
+                SemanticDetection('door', (3.0, 1.5, 0.7), confidence=0.55,
+                                  embedding=(1.0, 0.0), step=step),
+                SemanticDetection('refrigerator door', (3.0, 1.5, 0.7),
+                                  confidence=0.40, embedding=(1.0, 0.0), step=step),
+            ))
+            component.mapping.map.scene_graph.update_detections(fused)
+            component.update(step, observation)
+            self.assertEqual(component.target_confirmed, step == 7)
+        self.assertEqual(component.target_node.label, 'door')
+        self.assertEqual(component.statistics()['target_label_support'], 8)
+
+    def test_target_switch_prefers_target_labels_over_generic_observations(self):
+        component = _component('refrigerator', confirmation_observations=8)
+        component.mapping.map.occupancy.observed[8:32, 5:45] = True
+        graph = component.mapping.map.scene_graph
+        graph.update_detections([SemanticDetection(
+            'refrigerator door', (3.0, 1.5, 0.7),
+            confidence=0.7, embedding=(1.0, 0.0), step=0,
+        )])
+        for step in range(1, 40):
+            graph.update_detections([SemanticDetection(
+                'door', (3.0, 1.5, 0.7), confidence=0.5,
+                embedding=(1.0, 0.0), step=step,
+                label_evidence=('door', 'refrigerator door') if step < 5 else (),
+            )])
+        observation = {
+            'position': (1.0, 1.5, 0.4),
+            'orientation': (1.0, 0.0, 0.0, 0.0),
+            'sensors': {},
+        }
+        component.update(40, observation)
+        original = component.target_node.node_id
+        self.assertEqual(component.statistics()['target_label_support'], 5)
+        for step in range(8):
+            graph.update_detections([SemanticDetection(
+                'refrigerator door', (4.5, 3.0, 0.7), step=41 + step,
+            )])
+        component.update(49, observation)
+        self.assertNotEqual(component.target_node.node_id, original)
+        self.assertEqual(component.statistics()['target_label_support'], 8)
+        self.assertTrue(component.target_confirmed)
+
+    def test_embedding_only_chair_cannot_complete_refrigerator_query(self):
+        component = _component('refrigerator', perception=_FakeTextEmbeddingPerception())
+        component.mapping.map.occupancy.observed[8:32, 5:45] = True
+        for _ in range(2):
+            component.mapping.map.scene_graph.update_detections(
+                [SemanticDetection('chair', (3.0, 1.5, 0.7), embedding=(1.0, 0.0, 0.0))]
+            )
+        observation = {'position': (1.0, 1.5, 0.4), 'orientation': (1.0, 0.0, 0.0, 0.0), 'sensors': {}}
+        component.update(0, observation)
+        self.assertEqual(component.target_node.label, 'chair')
+        self.assertFalse(component.statistics()['target_confirmed'])
+        near_chair = dict(observation, position=component.current_goal)
+        self.assertEqual(component.evaluate(1, near_chair).status, SemanticExplorationStatus.RUNNING)
+
+        component.update(1, near_chair)
+        self.assertIsNone(component.target_node)
+        self.assertEqual(component.statistics()['rejected_provisional_targets'], 1)
+        component.update(2, near_chair)
+        self.assertIsNone(component.target_node)
+
+        for _ in range(2):
+            component.mapping.map.scene_graph.update_detections(
+                [SemanticDetection('refrigerator door', (4.0, 2.5, 0.8))]
+            )
+        component.update(3, near_chair)
+        self.assertEqual(component.target_node.label, 'refrigerator door')
+        self.assertTrue(component.statistics()['target_confirmed'])
+        at_goal = dict(observation, position=component.current_goal)
+        self.assertEqual(component.evaluate(4, at_goal).status, SemanticExplorationStatus.SUCCEEDED)
+
     def test_lexical_target_upgrades_only_to_strictly_better_node(self):
         component = _component()
         component.mapping.map.occupancy.observed[8:32, 5:45] = True
@@ -229,12 +380,96 @@ class SemanticExplorationComponentTest(unittest.TestCase):
         result = component.evaluate(1, reached)
 
         self.assertEqual(result.status, SemanticExplorationStatus.SUCCEEDED)
+        fallen = dict(reached, position=(*component.current_goal[:2], 0.0))
+        self.assertEqual(component.evaluate(1, fallen).failure_reason, 'robot_fell')
         with tempfile.TemporaryDirectory() as directory:
             prefix = str(Path(directory) / 'semantic_map')
             component.save(prefix)
             payload = json.loads(Path(prefix + '.json').read_text(encoding='utf-8'))
             self.assertIn('semantic_voronoi', payload)
             self.assertIn('semantic_exploration', payload)
+            self.assertIn('label_counts', payload['scene_graph'])
+
+
+    def test_compact_events_and_explicit_arrival_summary(self):
+        component = _component()
+        component.mapping.map.occupancy.observed[8:32, 5:45] = True
+        component.mapping.map.scene_graph.update_detections(
+            [
+                SemanticDetection('carry_object', (3.0, 1.5, 0.7)),
+                SemanticDetection('carry_object', (3.0, 1.5, 0.7)),
+            ]
+        )
+        observation = {'position': (1.0, 1.5, 0.4), 'orientation': (1.0, 0.0, 0.0, 0.0), 'sensors': {}}
+        component.update(0, observation)
+        progress = component.progress_event(0, observation)
+        self.assertLessEqual(len(progress), 7)
+        self.assertNotIn('statistics', progress)
+        self.assertGreater(progress['goal_distance_m'], component.config.target_distance)
+
+        incomplete = build_run_summary(
+            target_query=component.config.target_query,
+            detection_mode='isaac',
+            max_steps=100,
+            profile_goal=(1.0, 1.5, 0.4),
+            component=component,
+            step=0,
+            robot_observation=observation,
+            stop_reason='interrupted',
+            exit_code=130,
+        )
+        self.assertEqual(incomplete['status'], 'incomplete')
+        self.assertFalse(incomplete['arrival_verified'])
+        self.assertEqual(incomplete['profile_goal_distance_min_m'], 0.0)
+        self.assertEqual(incomplete['profile_goal_distance_final_m'], 0.0)
+        self.assertEqual(incomplete['profile_goal_distance_min_step'], 0)
+        startup_failure = build_run_summary(
+            target_query='refrigerator',
+            detection_mode='open_vocab',
+            max_steps=100,
+            stop_reason='exception',
+            error_type='RuntimeError',
+            exit_code=2,
+        )
+        self.assertEqual(startup_failure['status'], 'failed')
+        self.assertFalse(startup_failure['target_found'])
+
+        reached = dict(observation, position=component.current_goal)
+        unconfirmed = build_run_summary(
+            target_query=component.config.target_query,
+            detection_mode='isaac',
+            max_steps=100,
+            component=component,
+            step=1,
+            robot_observation=reached,
+            stop_reason='interrupted',
+            exit_code=130,
+        )
+        self.assertEqual(unconfirmed['status'], 'incomplete')
+        self.assertFalse(unconfirmed['arrival_verified'])
+        result = component.evaluate(1, reached)
+        self.assertNotIn('statistics', result.as_event())
+        self.assertEqual(result.as_event()['status'], 'succeeded')
+        completed = build_run_summary(
+            target_query=component.config.target_query,
+            detection_mode='isaac',
+            max_steps=100,
+            component=component,
+            terminal_result=result,
+            step=1,
+            robot_observation=reached,
+            exit_code=0,
+        )
+        self.assertEqual(completed['status'], 'succeeded')
+        self.assertTrue(completed['arrival_verified'])
+        self.assertLessEqual(completed['goal_distance_m'], completed['arrival_threshold_m'])
+        self.assertEqual(completed['arrival_rule'], 'xy_distance_to_approach_goal')
+        self.assertGreaterEqual(completed['arrival_margin_m'], 0.0)
+        self.assertIsNotNone(completed['target_distance_m'])
+        with tempfile.TemporaryDirectory() as directory:
+            path = summary_path(directory, '')
+            write_run_summary(path, completed)
+            self.assertEqual(json.loads(path.read_text())['status'], 'succeeded')
 
 
 if __name__ == '__main__':

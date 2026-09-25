@@ -59,6 +59,29 @@ class InteractionNavigationMappingTest(unittest.TestCase):
         self.assertEqual(graph.object_nodes()[0].observations, 1)
         self.assertEqual(graph.object_nodes()[0].sources, ('open_vocabulary', 'isaac'))
 
+    def test_same_frame_door_merge_keeps_refrigerator_label_evidence(self):
+        graph = SceneGraphMap(MappingConfig())
+        for step in range(8):
+            door = SemanticDetection(
+                'door', (2.0, 0.0, 1.0), confidence=0.55,
+                embedding=(1.0, 0.0), step=step,
+            )
+            refrigerator = SemanticDetection(
+                'refrigerator door', (2.1, 0.0, 1.0), confidence=0.40,
+                embedding=(1.0, 0.0), step=step,
+            )
+            detections = _deduplicate_semantic_detections(
+                (door, refrigerator) if step % 2 == 0 else (refrigerator, door)
+            )
+            self.assertEqual(len(detections), 1)
+            self.assertEqual(detections[0].label, 'door')
+            self.assertEqual(set(detections[0].label_evidence), {'door', 'refrigerator door'})
+            graph.update_detections(detections)
+
+        node = graph.object_nodes()[0]
+        self.assertEqual(node.observations, 8)
+        self.assertEqual(graph.label_counts(node.node_id), {'door': 8, 'refrigerator door': 8})
+
     def test_voxel_map_fuses_lidar_geometry_and_rgb_color(self):
         config = MappingConfig(voxel_size=0.2)
         voxel_map = VoxelPointCloudMap(config)
@@ -371,6 +394,7 @@ class InteractionNavigationMappingTest(unittest.TestCase):
         self.assertEqual(nodes[0].observations, 2)
         self.assertEqual(nodes[0].point_count, 50)
         self.assertEqual(nodes[0].last_seen_step, 4)
+        self.assertEqual(graph_map.label_counts(nodes[0].node_id), {'sofa': 1, 'couch': 1})
         self.assertAlmostEqual(np.linalg.norm(nodes[0].embedding), 1.0)
 
     def test_open_door_semantic_node_becomes_traversable(self):

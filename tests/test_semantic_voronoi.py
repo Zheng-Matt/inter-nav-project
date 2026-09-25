@@ -191,7 +191,7 @@ class SemanticVoronoiTest(unittest.TestCase):
         occupancy.observed[20:27, 10:150] = True
         occupancy.observed[20:100, 30:37] = True
         occupancy.observed[20:100, 100:107] = True
-        config = SemanticVoronoiConfig(spur_length=0.0)
+        config = SemanticVoronoiConfig(spur_length=0.0, verify_incremental=True)
         graph = SemanticVoronoiGraph(occupancy, config)
         graph.snapshot()
 
@@ -203,6 +203,9 @@ class SemanticVoronoiTest(unittest.TestCase):
         self.assertEqual(statistics['builds'], 1)
         self.assertEqual(statistics['incremental_updates'], 1)
         self.assertEqual(statistics['incremental_fallbacks'], 0)
+        self.assertEqual(statistics['incremental_verification_checks'], 1)
+        self.assertEqual(statistics['incremental_verification_mismatches'], 0)
+        self.assertGreater(statistics['incremental_seam_checks'], 0)
         self.assertGreater(statistics['last_window_cells'], 0)
         self.assertLess(statistics['last_window_cells'], occupancy.observed.size)
 
@@ -220,6 +223,32 @@ class SemanticVoronoiTest(unittest.TestCase):
             {frontier.frontier_id for frontier in reference.frontiers},
         )
         self.assertEqual(set(incremental.skeleton_cells), set(reference.skeleton_cells))
+
+    def test_full_verification_recovers_from_a_hidden_cache_mismatch(self):
+        occupancy = _occupancy(rows=120, columns=160)
+        occupancy.observed[20:27, 10:150] = True
+        occupancy.observed[20:100, 30:37] = True
+        occupancy.observed[20:100, 100:107] = True
+        config = SemanticVoronoiConfig(spur_length=0.0, verify_incremental=True)
+        graph = SemanticVoronoiGraph(occupancy, config)
+        graph.snapshot()
+
+        # Simulate a stale skeleton cell far from the next changed window.
+        right_cells = np.argwhere(graph._last_skeleton[:, 110:])
+        self.assertGreater(len(right_cells), 0)
+        row, col = right_cells[0]
+        graph._last_skeleton[int(row), int(col) + 110] = False
+
+        occupancy.observed[100:112, 30:37] = True
+        occupancy.revision += 1
+        recovered = graph.update()
+        statistics = graph.statistics()
+        self.assertEqual(statistics['incremental_verification_mismatches'], 1)
+        self.assertGreater(statistics['incremental_verification_mismatched_cells'], 0)
+        self.assertEqual(statistics['last_incremental_fallback_reason'], 'verification_mismatch')
+        self.assertEqual(statistics['incremental_fallbacks'], 1)
+        reference = SemanticVoronoiGraph(occupancy, config).snapshot()
+        self.assertEqual(set(recovered.skeleton_cells), set(reference.skeleton_cells))
 
     def test_incremental_distant_changes_use_separate_windows(self):
         occupancy = _occupancy(rows=120, columns=220)

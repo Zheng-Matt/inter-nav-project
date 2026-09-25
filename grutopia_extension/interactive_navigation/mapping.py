@@ -81,6 +81,9 @@ class SemanticDetection:
     point_count: int = 1
     step: int = 0
     sources: Tuple[str, ...] = ()
+    # Distinct labels observed for this object in one camera frame. Geometry
+    # can be fused without discarding a lower-confidence target label.
+    label_evidence: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -497,10 +500,19 @@ class SceneGraphMap:
         self._objects: Dict[str, SceneGraphNode] = {}
         self._object_position_sums: Dict[str, np.ndarray] = {}
         self._object_embedding_sums: Dict[str, np.ndarray] = {}
+        self._object_label_counts: Dict[str, Dict[str, int]] = {}
+
+    def label_counts(self, node_id: str) -> Dict[str, int]:
+        return dict(self._object_label_counts.get(node_id, {}))
 
     def update_detections(self, detections: Iterable[SemanticDetection]):
         for detection in detections:
             label = detection.label.strip() or 'unknown'
+            labels = tuple(dict.fromkeys(
+                observed.strip()
+                for observed in (*detection.label_evidence, label)
+                if observed.strip()
+            ))
             candidates = [
                 node
                 for node in self._objects.values()
@@ -521,6 +533,11 @@ class SceneGraphMap:
                     ),
                 )
                 count = node.observations + 1
+                label_counts = self._object_label_counts.setdefault(
+                    node.node_id, {node.label: node.observations}
+                )
+                for observed in labels:
+                    label_counts[observed] = label_counts.get(observed, 0) + 1
                 position_sum = self._object_position_sums[node.node_id] + np.asarray(detection.position)
                 position = tuple(float(value) for value in position_sum / count)
                 color = detection.color if detection.color is not None else node.color
@@ -573,6 +590,7 @@ class SceneGraphMap:
                     sources=tuple(dict.fromkeys(detection.sources)),
                 )
                 self._object_position_sums[node_id] = np.asarray(detection.position, dtype=np.float64)
+                self._object_label_counts[node_id] = {observed: 1 for observed in labels}
                 if detection.embedding is not None:
                     self._object_embedding_sums[node_id] = np.asarray(
                         detection.embedding,

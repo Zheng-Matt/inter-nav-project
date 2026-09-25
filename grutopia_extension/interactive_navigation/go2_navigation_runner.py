@@ -1,6 +1,7 @@
 """Isaac/GRUtopia runner for Unitree Go2 point navigation."""
 
 import json
+import logging
 import math
 import os
 import time
@@ -116,6 +117,7 @@ class Go2SemanticExplorationRunConfig:
     qwen_python: str = os.environ.get('QWEN3_PYTHON', 'python'),
     rendering_interval: int = 4
     use_fabric: bool = False
+    verify_voronoi_incremental: bool = False
 
     def __post_init__(self):
         if not self.target_query.strip():
@@ -362,9 +364,35 @@ def run_go2_semantic_exploration(
         SemanticExplorationComponent,
         SemanticExplorationConfig,
     )
+    from grutopia_extension.interactive_navigation.semantic_run_summary import (
+        build_run_summary,
+        summary_path,
+        write_run_summary,
+    )
+    from grutopia_extension.interactive_navigation.semantic_voronoi import SemanticVoronoiConfig
 
+    # Isaac may enable root DEBUG logging; retain HTTP warnings without
+    # printing every GroundingDINO and MobileSAM request.
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
     runtime = env = component = recorder = qwen_worker = perception = None
+    robot_observation = None
     result_code = 2
+    terminal_result = None
+    last_step = None
+    stop_reason = 'incomplete'
+    error_type = None
+    run_summary_path = summary_path(run.record_dir, run.map_output)
+    if run_summary_path is not None:
+        write_run_summary(
+            run_summary_path,
+            {
+                'schema_version': 1,
+                'status': 'running',
+                'target_query': run.target_query,
+                'detection_mode': run.semantic_detection_mode,
+                'max_steps': run.max_steps,
+            },
+        )
     try:
         detection_mode = SemanticDetectionMode.parse(run.semantic_detection_mode)
         perception_startup_error = None
@@ -498,6 +526,9 @@ def run_go2_semantic_exploration(
             SemanticExplorationConfig(
                 target_query=run.target_query,
                 mapping=profile.mapping,
+                voronoi=SemanticVoronoiConfig(
+                    verify_incremental=run.verify_voronoi_incremental,
+                ),
                 max_steps=run.max_steps,
                 target_distance=profile.success_distance,
                 fall_height=profile.fall_height,
@@ -565,6 +596,7 @@ def run_go2_semantic_exploration(
                 'steps': 0,
             }
         for step in range(run.max_steps):
+            last_step = step
             t0 = time.perf_counter() if timing is not None else 0.0
             sensor_rig.update(
                 step,
@@ -572,7 +604,12 @@ def run_go2_semantic_exploration(
                 force_capture=recorder is not None and step % run.record_every == 0,
             )
             t1 = time.perf_counter() if timing is not None else 0.0
-            component.update(step, robot_observation)
+            try:
+                component.update(step, robot_observation)
+            finally:
+                # Preserve the detector response even if this update ends the run.
+                if recorder is not None:
+                    recorder.record_perception(step, robot_observation, component.mapping)
             t2 = time.perf_counter() if timing is not None else 0.0
             if step % run.log_every == 0:
                 print(
@@ -590,6 +627,8 @@ def run_go2_semantic_exploration(
             t3 = time.perf_counter() if timing is not None else 0.0
             result = component.evaluate(step, robot_observation)
             if result.terminal:
+                terminal_result = result
+                stop_reason = 'goal_reached' if result.success else (result.failure_reason or 'failed')
                 print(json.dumps(result.as_event()), flush=True)
                 result_code = 0 if result.success else 2
                 break
@@ -610,20 +649,42 @@ def run_go2_semantic_exploration(
                     print(json.dumps({'event': 'step_timing', **{k: round(v, 2) for k, v in timing.items()}}), flush=True)
             if terminated:
                 raise RuntimeError('task terminated during Go2 semantic exploration')
+    except KeyboardInterrupt:
+        stop_reason = 'interrupted'
+        result_code = 130
+        print(json.dumps({'event': 'semantic_exploration_stopped', 'reason': stop_reason, 'step': last_step}), flush=True)
     except Exception as error:
+        error_type = type(error).__name__
+        stop_reason = 'exception'
         traceback.print_exc()
         print(
             json.dumps(
                 {
                     'event': 'semantic_exploration_error',
-                    'robot': 'go2',
-                    'type': type(error).__name__,
+                    'type': error_type,
                     'message': str(error),
                 }
             ),
             flush=True,
         )
     finally:
+        if run_summary_path is not None:
+            write_run_summary(
+                run_summary_path,
+                build_run_summary(
+                    target_query=run.target_query,
+                    detection_mode=run.semantic_detection_mode,
+                    max_steps=run.max_steps,
+                    profile_goal=profile.goals[0] if profile.goals else None,
+                    component=component,
+                    terminal_result=terminal_result,
+                    step=last_step,
+                    robot_observation=robot_observation,
+                    stop_reason=stop_reason,
+                    error_type=error_type,
+                    exit_code=result_code,
+                ),
+            )
         if recorder is not None:
             recorder.close()
         if component is not None:

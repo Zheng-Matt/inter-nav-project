@@ -201,6 +201,9 @@ class OpenVocabularyPerception:
         self._clip_device: Optional[str] = None
         self.last_item_errors: list[dict] = []
         self.last_query_status = 'idle'
+        # One small, JSON-serializable record for the camera frame most
+        # recently sent to GroundingDINO. Never reuse it for a later step.
+        self.last_debug_frame: Optional[dict] = None
 
     def check_ready(self, load_clip: bool = True) -> dict:
         """Validate remote services and local CLIP before a long run starts."""
@@ -240,9 +243,20 @@ class OpenVocabularyPerception:
         step: int = 0,
     ) -> list[Any]:
         self.last_item_errors = []
+        self.last_debug_frame = None
         rgb, depth_array, points = self._validate_inputs(rgba, depth, point_image)
         query = self.build_query(target, include_context=include_context)
         now = self._clock()
+        debug_frame = {
+            'step': int(step),
+            'status': 'requested',
+            'query': query,
+            'image_size': [int(rgb.shape[1]), int(rgb.shape[0])],
+            'boxes': [],
+            'mapped': [],
+            'item_errors': [],
+        }
+        self.last_debug_frame = debug_frame
         if query == self._last_query and now - self._last_query_time < self.config.query_interval:
             # A materialized detection contains geometry from a particular
             # RGB/depth frame. Replaying it would submit a stale world-space
@@ -250,13 +264,34 @@ class OpenVocabularyPerception:
             # has moved. Rate limiting therefore skips this frame instead of
             # caching three-dimensional observations.
             self.last_query_status = 'rate_limited'
+            debug_frame['status'] = 'rate_limited'
             return []
 
         try:
             detections = self._run_detector(rgb, query)
+            debug_frame['boxes'] = self._debug_detector_boxes(detections, rgb.shape[:2])
             result = self._materialize(detections, rgb, depth_array, points, step=step)
+            debug_frame['mapped'] = [
+                {
+                    'label': detection.label,
+                    'bbox_xyxy': [float(value) for value in detection.bbox],
+                    'centroid': [float(value) for value in detection.centroid],
+                    'point_count': int(detection.point_count),
+                }
+                for detection in result
+                if isinstance(detection, OpenVocabularyDetection)
+                and detection.centroid is not None
+            ]
+            debug_frame['item_errors'] = list(self.last_item_errors)
+            debug_frame['status'] = 'ok'
             self.last_query_status = 'ok'
-        except Exception:
+        except Exception as error:
+            debug_frame['item_errors'] = list(self.last_item_errors)
+            debug_frame['status'] = 'failed'
+            debug_frame['error'] = {
+                'type': type(error).__name__,
+                'message': str(error),
+            }
             self.last_query_status = 'failed'
             if self.simulator_fallback is None:
                 raise
@@ -270,11 +305,32 @@ class OpenVocabularyPerception:
                     )
                 )
                 self.last_query_status = 'fallback'
+                debug_frame['status'] = 'fallback'
 
         self._last_query_time = now
         self._last_query = query
         self._last_result = list(result)
         return result
+
+    def _debug_detector_boxes(self, detections: Iterable[Any], image_shape: tuple[int, int]) -> list[dict]:
+        """Retain DINO boxes before thresholding, masking, and map association."""
+
+        boxes = []
+        for raw in detections:
+            try:
+                label, confidence, bbox = self._parse_detection(raw, image_shape)
+                boxes.append({
+                    'label': label,
+                    'confidence': float(confidence),
+                    'bbox_xyxy': [float(value) for value in bbox],
+                    'above_threshold': bool(confidence >= self.config.confidence_threshold),
+                })
+            except Exception as error:
+                boxes.append({
+                    'label': self._raw_label(raw),
+                    'error': f'{type(error).__name__}: {error}',
+                })
+        return boxes
 
     def as_semantic_detections(self, detections: Iterable[OpenVocabularyDetection]) -> list[SemanticDetection]:
         return [detection.to_semantic_detection() for detection in detections if detection.centroid is not None]
@@ -392,10 +448,10 @@ class OpenVocabularyPerception:
         if isinstance(raw, dict):
             label = str(raw.get('label', raw.get('phrase', 'object')))
             confidence = float(raw.get('confidence', raw.get('score', raw.get('logit', 1.0))))
-            box = np.asarray(raw.get('bbox', raw.get('box')), dtype=float)
+            box = np.array(raw.get('bbox', raw.get('box')), dtype=float, copy=True)
         else:
             label, confidence, box = raw
-            box = np.asarray(box, dtype=float)
+            box = np.array(box, dtype=float, copy=True)
         if box.shape != (4,) or not np.isfinite(box).all():
             raise ValueError('detector bbox must contain four finite values')
         height, width = image_shape

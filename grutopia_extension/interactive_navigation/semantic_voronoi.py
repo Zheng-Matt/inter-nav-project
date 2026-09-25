@@ -12,6 +12,7 @@ from collections import deque
 from dataclasses import asdict, dataclass, field
 from heapq import heappop, heappush
 from math import ceil, hypot
+from time import perf_counter
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
@@ -42,6 +43,7 @@ class SemanticVoronoiConfig:
     spur_length: float = 0.30
     frontier_min_size: int = 1
     incremental: bool = True
+    verify_incremental: bool = False  # expensive full-rebuild oracle for smoke tests
     incremental_margin_cells: int = 4
     incremental_guard_cells: int = 3
     incremental_max_window_fraction: float = 0.75
@@ -163,8 +165,17 @@ class _MutableStatistics:
     incremental_changed_cells_total: int = 0
     incremental_window_cells_total: int = 0
     incremental_window_work_cells_total: int = 0
+    incremental_seconds: float = 0.0
+    full_build_seconds: float = 0.0
+    verification_seconds: float = 0.0
     incremental_max_window_count: int = 0
     incremental_max_window_fraction: float = 0.0
+    incremental_seam_checks: int = 0
+    incremental_seam_mismatches: int = 0
+    incremental_verification_checks: int = 0
+    incremental_verification_mismatches: int = 0
+    incremental_verification_mismatched_cells: int = 0
+    last_verification_mismatch_revision: Optional[int] = None
 
 
 class SemanticVoronoiGraph:
@@ -279,7 +290,9 @@ class SemanticVoronoiGraph:
                 skeleton = self._last_skeleton
                 self._stats.unchanged_updates += 1
             else:
+                started = perf_counter()
                 skeleton = self._incremental_skeleton(traversable, clearance, changed, resolution)
+                self._stats.incremental_seconds += perf_counter() - started
                 if skeleton is not None:
                     self._stats.incremental_updates += 1
                 else:
@@ -295,7 +308,9 @@ class SemanticVoronoiGraph:
             self._reset_incremental_diagnostics()
 
         if skeleton is None:
+            started = perf_counter()
             skeleton = self._build_skeleton(traversable, clearance, resolution)
+            self._stats.full_build_seconds += perf_counter() - started
             self._stats.builds += 1
 
         # When the traversable mask is unchanged the clearance field and the
@@ -564,7 +579,9 @@ class SemanticVoronoiGraph:
                     old_band.shape[1] - (band[3] - inner[3]),
                 )
                 ring[interior[0] : interior[1], interior[2] : interior[3]] = False
+                self._stats.incremental_seam_checks += 1
                 if np.any(old_band[ring] != new_band[ring]):
+                    self._stats.incremental_seam_mismatches += 1
                     seam_mismatch = True
                     break
 
@@ -576,6 +593,20 @@ class SemanticVoronoiGraph:
             if not seam_mismatch:
                 spliced &= traversable
                 self._record_incremental_window_evaluation(changed_cells)
+                if self.config.verify_incremental:
+                    # The seam is a cheap guard, not a proof of global equality.
+                    # Smoke runs compare the complete result and fall back safely.
+                    started = perf_counter()
+                    reference = self._build_skeleton(traversable, clearance, resolution)
+                    self._stats.verification_seconds += perf_counter() - started
+                    mismatched_cells = int(np.count_nonzero(spliced != reference))
+                    self._stats.incremental_verification_checks += 1
+                    if mismatched_cells:
+                        self._stats.incremental_verification_mismatches += 1
+                        self._stats.incremental_verification_mismatched_cells += mismatched_cells
+                        self._stats.last_verification_mismatch_revision = int(self.occupancy.revision)
+                        self._stats.last_incremental_fallback_reason = 'verification_mismatch'
+                        return None
                 return spliced
 
             next_boost = (

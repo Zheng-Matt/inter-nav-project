@@ -80,6 +80,9 @@ class NavigationRecordingSession:
             navigation_component.mapping,
         )
 
+    def record_perception(self, step: int, robot_observation: dict, mapping_runtime):
+        self.recorder.record_perception(step, robot_observation, mapping_runtime)
+
     def close(self):
         if not self._closed:
             self.recorder.close()

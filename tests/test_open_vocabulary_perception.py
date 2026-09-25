@@ -300,6 +300,50 @@ class OpenVocabularyPerceptionTest(unittest.TestCase):
 
         with self.assertRaises(requests.Timeout):
             perception.perceive(self.rgba, self.depth, self.point_image, 'door')
+        self.assertEqual(perception.last_debug_frame['status'], 'failed')
+        self.assertEqual(perception.last_debug_frame['error']['type'], 'Timeout')
+
+    def test_debug_frame_keeps_raw_dino_boxes_before_mapping_filters(self):
+        perception = OpenVocabularyPerception(
+            OpenVocabularyPerceptionConfig(query_interval=0),
+            detector=lambda image, query: [
+                {'label': 'refrigerator', 'confidence': 0.8, 'bbox': [0, 0, 2, 3]},
+                {'label': 'door', 'confidence': 0.1, 'bbox': [2, 0, 4, 3]},
+            ],
+            segmenter=lambda image, bbox: np.ones(image.shape[:2], dtype=bool),
+            embedder=lambda crop: np.ones(2),
+        )
+
+        result = perception.perceive(
+            self.rgba, self.depth, self.point_image, 'refrigerator', step=24
+        )
+
+        frame = perception.last_debug_frame
+        self.assertEqual(frame['step'], 24)
+        self.assertEqual(frame['status'], 'ok')
+        self.assertEqual(frame['image_size'], [4, 3])
+        self.assertEqual(len(frame['boxes']), 2)
+        self.assertEqual(frame['boxes'][0]['bbox_xyxy'], [0.0, 0.0, 2.0, 3.0])
+        self.assertFalse(frame['boxes'][1]['above_threshold'])
+        self.assertEqual(len(frame['mapped']), len(result))
+        self.assertEqual(frame['mapped'][0]['label'], 'refrigerator')
+
+    def test_rate_limited_debug_frame_cannot_reuse_old_boxes(self):
+        perception = OpenVocabularyPerception(
+            OpenVocabularyPerceptionConfig(query_interval=60),
+            detector=lambda image, query: [
+                {'label': 'door', 'confidence': 0.8, 'bbox': [0, 0, 2, 3]},
+            ],
+            segmenter=lambda image, bbox: np.ones(image.shape[:2], dtype=bool),
+            embedder=lambda crop: np.ones(2),
+            clock=lambda: 1.0,
+        )
+        perception.perceive(self.rgba, self.depth, self.point_image, 'door', step=24)
+        perception.perceive(self.rgba, self.depth, self.point_image, 'door', step=48)
+
+        self.assertEqual(perception.last_debug_frame['step'], 48)
+        self.assertEqual(perception.last_debug_frame['status'], 'rate_limited')
+        self.assertEqual(perception.last_debug_frame['boxes'], [])
 
 
 if __name__ == '__main__':

@@ -44,6 +44,9 @@ class SemanticExplorationConfig:
     open_vocabulary_startup_error: Optional[str] = None
     target_min_observations: int = 2
     target_embedding_threshold: float = 0.24
+    require_lexical_confirmation: bool = True
+    target_confirmation_min_label_observations: int = 8
+    target_confirmation_min_label_fraction: float = 0.60
     frontier_selection_interval: int = 160
     # Incremental Voronoi updates keep frequent topology refreshes cheap; a
     # short interval also keeps changed-cell windows small and splice-able.
@@ -62,6 +65,7 @@ class SemanticExplorationConfig:
         for name in (
             'max_steps',
             'target_min_observations',
+            'target_confirmation_min_label_observations',
             'frontier_selection_interval',
             'topology_update_interval',
         ):
@@ -70,6 +74,8 @@ class SemanticExplorationConfig:
         for name in ('target_distance', 'frontier_reached_distance', 'safe_base_height'):
             if getattr(self, name) <= 0:
                 raise ValueError(f'{name} must be positive')
+        if not 0.0 < self.target_confirmation_min_label_fraction <= 1.0:
+            raise ValueError('target_confirmation_min_label_fraction must be in (0, 1]')
 
 
 @dataclass(frozen=True)
@@ -81,6 +87,9 @@ class SemanticExplorationResult:
     target_position: Optional[Tuple[float, float, float]]
     failure_reason: Optional[str]
     statistics: dict
+    approach_goal: Optional[Tuple[float, float, float]] = None
+    goal_distance: Optional[float] = None
+    arrival_threshold: float = 0.70
 
     @property
     def terminal(self) -> bool:
@@ -91,15 +100,17 @@ class SemanticExplorationResult:
         return self.status == SemanticExplorationStatus.SUCCEEDED
 
     def as_event(self) -> dict:
+        """Keep terminal stdout small; the map and run summary hold details."""
         return {
             'event': 'semantic_exploration_result',
+            'status': self.status.value,
             'success': self.success,
             'step': self.step,
             'target_query': self.target_query,
-            'position': list(self.position),
-            'target_position': None if self.target_position is None else list(self.target_position),
-            'failure_reason': self.failure_reason,
-            'statistics': self.statistics,
+            'position': [round(value, 3) for value in self.position],
+            'goal_distance_m': None if self.goal_distance is None else round(self.goal_distance, 3),
+            'arrival_threshold_m': self.arrival_threshold,
+            'reason': self.failure_reason,
         }
 
 
@@ -142,6 +153,7 @@ class SemanticExplorationComponent:
         self._target_embedding = None
         self._target_embedding_attempted = False
         self._target_lexical = False
+        self._rejected_embedding_targets = set()
         self._trajectory = []
         self._sync_runtime_state()
 
@@ -156,6 +168,43 @@ class SemanticExplorationComponent:
         if self.last_decision is None:
             return 'initialize_exploration'
         return f'explore_{self.last_decision.mode.value}'
+
+    def _node_label_evidence(self, node: SceneGraphNode) -> Tuple[int, int, int]:
+        counts = self.mapping.map.scene_graph.label_counts(node.node_id)
+        if not counts:
+            counts = {node.label: node.observations}
+        query = _normalize_label(self.config.target_query)
+        matching_counts = [
+            count for label, count in counts.items()
+            if query in _normalize_label(label) or _normalize_label(label) in query
+        ]
+        return sum(matching_counts), sum(counts.values()), max(matching_counts, default=0)
+
+    def _target_label_support(self) -> Tuple[int, int]:
+        if self.target_node is None:
+            return 0, 0
+        matching, total, _ = self._node_label_evidence(self.target_node)
+        return matching, total
+
+    @property
+    def target_confirmed(self) -> bool:
+        if self.target_node is None:
+            return False
+        if not self.config.require_lexical_confirmation:
+            return True
+        matching, total, repeated_label = self._node_label_evidence(self.target_node)
+        return (
+            self._target_lexical
+            and matching >= self.config.target_confirmation_min_label_observations
+            and total > 0
+            and (
+                matching / total >= self.config.target_confirmation_min_label_fraction
+                # A stable refrigerator can also be called "door" in most
+                # frames. Repeated identical target labels are stronger
+                # evidence than their fraction of all node observations.
+                or repeated_label >= self.config.target_confirmation_min_label_observations
+            )
+        )
 
     def update(self, step: int, robot_observation: dict):
         self.mapping.update(step, robot_observation)
@@ -173,25 +222,41 @@ class SemanticExplorationComponent:
                 self.target_node,
             )
             lexical = self._lexical_target_node()
-            if lexical is not None and lexical.node_id != self.target_node.node_id:
-                # Embedding-similarity locks are provisional: a node whose
-                # label lexically matches the query (e.g. a real refrigerator
-                # entering the scene graph) always wins over a look-alike
-                # matched only through CLIP similarity. A lexical lock can
-                # also be upgraded, but only by a strictly better-observed
-                # same-label node: long-range depth medians create duplicate
-                # ghost nodes in front of the real object, and the true
-                # instance accumulates observations much faster. Observations
-                # are compared before confidence because confidence saturates
-                # at 1.0, which let a 44-observation ghost outrank the real
-                # 1788-observation refrigerator in a recorded run.
+            if lexical is None:
+                self._target_lexical = False
+            elif lexical.node_id == self.target_node.node_id:
+                self._target_lexical = True
+            else:
+                # An embedding-only lock is provisional. For two lexical
+                # nodes, prefer evidence for the requested label before total
+                # observations; generic "door" frames must not hold the lock
+                # against a better-observed refrigerator.
                 if not self._target_lexical or (
-                    (lexical.observations, lexical.confidence)
-                    > (self.target_node.observations, self.target_node.confidence)
+                    (self._node_label_evidence(lexical)[0], lexical.observations, lexical.confidence)
+                    > (
+                        self._node_label_evidence(self.target_node)[0],
+                        self.target_node.observations,
+                        self.target_node.confidence,
+                    )
                 ):
                     self.target_node = lexical
                     self._target_lexical = True
                     self.target_navigation_position = None
+        if (
+            self.config.require_lexical_confirmation
+            and self.target_node is not None
+            and not self.target_confirmed
+            and self.target_navigation_position is not None
+            and _distance_xy(position, self.target_navigation_position) <= self.config.target_distance
+        ):
+            # An embedding match is a place to investigate, not proof that
+            # the named object was found. Continue exploring after reaching it.
+            self._rejected_embedding_targets.add(self.target_node.node_id)
+            self.target_node = None
+            self.target_navigation_position = None
+            self.current_goal = None
+            self.current_frontier_id = None
+            self._last_selection_step = step - self.config.frontier_selection_interval
         if self.target_node is not None:
             if self.target_navigation_position is None:
                 self.target_navigation_position = self._target_approach_position(
@@ -284,17 +349,20 @@ class SemanticExplorationComponent:
 
     def evaluate(self, step: int, robot_observation: dict) -> SemanticExplorationResult:
         position = _position(robot_observation)
+        approach_goal = self.target_navigation_position
+        goal_distance = None if approach_goal is None else _distance_xy(position, approach_goal)
         status = SemanticExplorationStatus.RUNNING
         failure_reason = None
-        if (
-            self.target_node is not None
-            and self.target_navigation_position is not None
-            and _distance_xy(position, self.target_navigation_position) <= self.config.target_distance
-        ):
-            status = SemanticExplorationStatus.SUCCEEDED
-        elif position[2] < self.config.fall_height:
+        if position[2] < self.config.fall_height:
             status = SemanticExplorationStatus.FAILED
             failure_reason = 'robot_fell'
+        elif (
+            self.target_node is not None
+            and self.target_confirmed
+            and goal_distance is not None
+            and goal_distance <= self.config.target_distance
+        ):
+            status = SemanticExplorationStatus.SUCCEEDED
         elif step + 1 >= self.config.max_steps:
             status = SemanticExplorationStatus.FAILED
             failure_reason = 'global_step_limit'
@@ -308,26 +376,24 @@ class SemanticExplorationComponent:
                 None if self.target_node is None else tuple(float(value) for value in self.target_node.position)
             ),
             failure_reason=failure_reason,
-            # Full statistics walk the ever-growing scene graph and voxel map;
-            # computing them on every running step dominated the whole loop, so
-            # they are only materialized for terminal results.
+            # Full statistics are materialized only for terminal results.
             statistics=self.statistics() if terminal else {},
+            approach_goal=approach_goal,
+            goal_distance=goal_distance,
+            arrival_threshold=self.config.target_distance,
         )
 
     def progress_event(self, step: int, robot_observation: dict) -> dict:
         position = _position(robot_observation)
+        goal_distance = None if self.current_goal is None else _distance_xy(position, self.current_goal)
         return {
             'event': 'semantic_exploration_progress',
             'step': step,
             'state': self.state,
-            'position': list(position),
-            'target_query': self.config.target_query,
+            'position': [round(value, 2) for value in position],
             'target_found': self.target_node is not None,
-            'target_position': (
-                None if self.target_node is None else list(self.target_node.position)
-            ),
-            'active_goal': None if self.current_goal is None else list(self.current_goal),
-            'statistics': self.statistics(),
+            'target_confirmed': self.target_confirmed,
+            'goal_distance_m': None if goal_distance is None else round(goal_distance, 2),
         }
 
     def statistics(self) -> dict:
@@ -337,6 +403,9 @@ class SemanticExplorationComponent:
                 'exploration_state': self.state,
                 'target_query': self.config.target_query,
                 'target_found': self.target_node is not None,
+                'target_confirmed': self.target_confirmed,
+                'target_label_support': self._target_label_support()[0],
+                'rejected_provisional_targets': len(self._rejected_embedding_targets),
                 'target_node': None if self.target_node is None else self.target_node.node_id,
                 'target_match': (
                     None
@@ -389,17 +458,29 @@ class SemanticExplorationComponent:
         if nodes is None:
             nodes = self._candidate_target_nodes()
         normalized_target = _normalize_label(self.config.target_query)
-        lexical = [
-            node
-            for node in nodes
-            if normalized_target in _normalize_label(node.label)
-            or _normalize_label(node.label) in normalized_target
-        ]
+        lexical = []
+        for node in nodes:
+            representative_matches = (
+                normalized_target in _normalize_label(node.label)
+                or _normalize_label(node.label) in normalized_target
+            )
+            matching, _, repeated_label = self._node_label_evidence(node)
+            if representative_matches or (
+                matching >= self.config.target_confirmation_min_label_observations
+                and repeated_label >= self.config.target_confirmation_min_label_observations
+            ):
+                lexical.append(node)
         if not lexical:
             return None
-        # Evidence first: confidence saturates at 1.0 for both real objects
-        # and long-range depth ghosts, so observation count discriminates.
-        return max(lexical, key=lambda node: (node.observations, node.confidence))
+        # Rank target-specific evidence before generic "door" observations.
+        return max(
+            lexical,
+            key=lambda node: (
+                self._node_label_evidence(node)[0],
+                node.observations,
+                node.confidence,
+            ),
+        )
 
     def _best_target_node(self) -> Optional[SceneGraphNode]:
         nodes = self._candidate_target_nodes()
@@ -414,7 +495,7 @@ class SemanticExplorationComponent:
             return None
         scored = []
         for node in nodes:
-            if node.embedding is None:
+            if node.node_id in self._rejected_embedding_targets or node.embedding is None:
                 continue
             embedding = np.asarray(node.embedding, dtype=np.float32)
             if embedding.shape != target_embedding.shape:
