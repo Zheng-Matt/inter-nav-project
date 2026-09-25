@@ -143,8 +143,9 @@ every statistics block reports `semantic_detection_mode`.
 For degraded hybrid runs, `semantic_detection_effective_mode`,
 `open_vocabulary_available`, and `open_vocabulary_startup_error` preserve what
 actually ran in the saved JSON.
-The progress statistics also expose attempts, completed queries, detections,
+Saved statistics also expose attempts, completed queries, detections,
 partial candidate failures, the last detected labels, and the last exception.
+Periodic console progress stays compact.
 
 An empty programmatic room is available with `--scene programmatic`.
 
@@ -152,7 +153,9 @@ A finished run prints `semantic_exploration_result` with `"success": true`
 and writes to `--record-dir`:
 
 - `combined.mp4`, `robot_rgb.mp4`, `third_person.mp4`, `map_topdown.mp4`
+- `groundingdino.mp4` and `groundingdino_detections.jsonl` when the detector is queried
 - matching `*_preview.png`
+- `run_summary.json` (terminal status, target confirmation, arrival distances)
 - `final_map.json` (Voronoi graph, decisions, trajectory)
 - `final_map.npz` (occupancy layers and skeleton)
 
@@ -162,6 +165,8 @@ different run directories.
 
 For staged offline, geometry-only, and fused semantic validation, follow the
 [navigation and semantic regression test plan](docs/navigation-semantic-regression-test-plan.md).
+The [September 19–25 navigation report](docs/reports/go2-open-vocabulary-weekly-2026-09-19-to-25.md)
+compares the earlier failures with the label-fusion rerun.
 
 ## Architecture
 

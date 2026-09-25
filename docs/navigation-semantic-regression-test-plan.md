@@ -164,3 +164,92 @@ For each live run, keep the command, commit hash, machine/GPU allocation,
 service availability, result JSON, `final_map.json`, `final_map.npz`, videos,
 and a short pass/fail note. A live issue is considered reproduced only when its
 step number and corresponding replan reason or semantic node can be identified.
+
+## Outcome and seam verification for new smoke runs
+
+The semantic demo now gives each run a timestamped output directory by default.
+Use an explicit fresh `--record-dir` when comparing named scenarios. Read
+`run_summary.json` first: `target_found` only means perception found a node;
+`status: succeeded` requires a lexically confirmed target, an emitted
+terminal result, and a final robot position within `arrival_threshold_m` of
+`approach_goal`. Embedding-only candidates are explored and rejected when
+reached without confirmation. A stale
+`status: running` means the process exited before its finalizer could record
+an outcome. The detailed map remains in `final_map.json`; periodic stdout
+contains only a compact progress event.
+
+For a seam correctness smoke run, add `--verify-voronoi-incremental`. This
+compares every successful seam splice with a full skeleton rebuild and falls
+back to the full result if any cell differs. The option is intentionally
+expensive and should stay off for ordinary runs. Check
+`voronoi.incremental_verification_checks`,
+`voronoi.incremental_verification_mismatches`,
+`voronoi.incremental_seam_mismatches`, and
+`voronoi.incremental_fallback_reasons` in `run_summary.json`.
+Accept an incremental correctness run only when verification checks ran
+and `incremental_verification_mismatches` is zero. Seam mismatches may be
+resolved by expanding the window; inspect their count and the fallback reasons.
+Compare `incremental_seconds - verification_seconds` with
+`full_build_seconds` and the fallback fraction before tuning the window
+threshold.
+
+For the GRScene profile, `success_distance` is 1.10 m and is passed into
+semantic exploration as the arrival threshold. This is measured in the XY
+plane to the selected **approach goal**, not to the refrigerator center.
+`run_summary.json` reports both distances and the margin to the threshold.
+A result just inside 1.10 m should be described as entering the configured
+arrival radius, not as touching or interacting with the object.
+
+Open-vocabulary completion also requires repeated label evidence on the same
+scene-graph node: at least eight observations matching the query, plus either
+at least 60% matching label votes or eight repetitions of the same matching
+phrase. Same-frame geometry fusion retains each distinct label as evidence,
+even when a higher-confidence generic `door` wins the representative label.
+A single high-confidence relabel of a door to "refrigerator" is insufficient.
+`target_label_support` and
+`rejected_provisional_targets` in the summary show this decision. The
+thresholds are conservative smoke-run guards; they do not establish that the
+perception model can reliably recognize the real refrigerator.
+
+### 2026-09-23 live smoke evidence
+
+- `smoke_isaac_verify_20260923_01` (Isaac labels, before the repeated-label
+  guard): terminal success at step 2458, final XY distance 1.0994 m to the
+  approach goal with a 1.10 m threshold. Its seam oracle ran 41 comparisons
+  with zero full-skeleton mismatches; 46 seam mismatches were handled by
+  window expansion or full rebuild. This verifies the configured arrival rule
+  and this run's incremental skeletons, not physical object interaction.
+- `smoke_open_vocab_confirmed_20260923_02` (before the repeated-label guard):
+  falsely reported success at step 5400 after a briefly relabeled door node
+  was treated as a refrigerator. The selected node had only five observations.
+- `smoke_open_vocab_label_evidence_20260923_03` (with the guard): reached the
+  6000-step limit with `target_confirmed: false` and `arrival_verified: false`.
+  It processed 250 open-vocabulary frames with zero perception-service failures
+  and rejected four provisional candidates. The prior false success did not
+  recur. Its trajectory nevertheless passed within 1.118 m of the profile
+  goal at step 4878 (1.289 m from the Isaac-labeled refrigerator center),
+  then ended 1.828 m from the profile goal. This is an unconfirmed semantic
+  outcome, not evidence that the robot never reached the refrigerator area.
+
+### 2026-09-25 label-fusion rerun
+
+`go2_open_vocab_label_fix_20260925_192219` completed at step 2365 with
+`target_confirmed: true` and `arrival_verified: true`. It recorded 99
+open-vocabulary frames and zero perception failures. The selected node's
+representative label was still `door`, but its saved label counts were
+`door: 100`, `refrigerator door: 15`, and `refrigerator: 1`. The first
+100-step progress record with target confirmation was step 800. Final XY
+distance to the approach goal was 1.0998 m against the 1.10 m threshold,
+an arrival margin of just 0.0002 m. Distance to the profile reference goal
+was 1.3561 m. Report this as a threshold-level arrival near the target;
+stable parking and physical interaction were not verified. The run also
+saved `groundingdino.mp4` and `groundingdino_detections.jsonl` so the model's
+boxes can be distinguished from yellow Isaac ground-truth boxes.
+
+The earlier `go2_semantic_exploration_open_vocab` run ended 1.430 m from the
+profile goal; the Isaac-labeled success run ended 1.356 m away. Both paths
+reached the same area. The label confirmation rule is a semantic guard and
+must not be used to infer geometric proximity.
+Future `run_summary.json` files record `profile_goal_distance_min_m`, its step,
+and `profile_goal_distance_final_m` separately. The profile goal is used only
+for after-run diagnosis, never as an input to exploration or online success.

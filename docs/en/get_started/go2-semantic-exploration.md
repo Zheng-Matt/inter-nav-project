@@ -124,17 +124,30 @@ $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
   --detection-mode open_vocab --qwen-device cuda:2
 ```
 
-Outputs under the `--record-dir` include synchronized videos plus
-`final_map.npz` and `final_map.json`. When `--map-output` is omitted, its
-default is derived from `--record-dir` rather than from a fixed shared folder.
+Outputs under the `--record-dir` include synchronized videos,
+`run_summary.json`, `final_map.npz`, and `final_map.json`. Runs that actually
+query the open-vocabulary detector also save `groundingdino.mp4` and
+`groundingdino_detections.jsonl`. The GroundingDINO video contains model
+query frames; yellow third-person boxes are Isaac ground truth. When
+`--map-output` is omitted, its default is derived from `--record-dir`.
 
-Progress and final statistics distinguish `open_vocabulary_attempts`, completed
+Compact periodic progress prints only the step, state, position, target flags,
+and goal distance. Saved final statistics distinguish `open_vocabulary_attempts`, completed
 `open_vocabulary_frames`, rate-limited and empty frames, total detections,
 partial candidate failures, the last successful step, last detected labels,
 the last candidate errors, and the last frame exception. `target_found=false` with
 `open_vocabulary_last_labels=["refrigerator"]` means the label was seen but has
 not yet accumulated the two stable scene-graph observations required to lock
 the navigation target.
+
+`target_found` is provisional. `target_confirmed` requires at least eight
+matching label observations on one node, plus either a matching-label fraction
+of at least 60% or eight repetitions of the same matching phrase. Same-frame
+geometry fusion preserves distinct labels as separate evidence, so a stable
+`door` node can also accumulate `refrigerator door` observations. Success
+additionally requires arrival within the profile's XY distance threshold of
+the selected approach goal. Read `run_summary.json` before interpreting a
+video or an old `final_map.json` as a completed run.
 
 For `hybrid`, compare `semantic_detection_mode` with
 `semantic_detection_effective_mode`. If preflight fell back to Isaac, the saved
