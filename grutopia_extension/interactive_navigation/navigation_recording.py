@@ -78,6 +78,7 @@ class NavigationRecordingSession:
             robot_observation,
             SimpleNamespace(robot_position=position),
             navigation_component.mapping,
+            target_context=navigation_component,
         )
 
     def record_perception(self, step: int, robot_observation: dict, mapping_runtime):

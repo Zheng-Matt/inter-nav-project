@@ -208,7 +208,7 @@ class InteractionVideoRecorder:
             raise RuntimeError(f'OpenCV could not open MP4 writer for {filename}')
         return writer
 
-    def capture(self, step: int, state, robot_observation: dict, interaction_observation, mapping_runtime):
+    def capture(self, step: int, state, robot_observation: dict, interaction_observation, mapping_runtime, target_context=None):
         if step % self.capture_interval != 0:
             return
         position = tuple(float(value) for value in interaction_observation.robot_position)
@@ -238,7 +238,7 @@ class InteractionVideoRecorder:
             'overview_camera',
             'Third-person (Isaac GT)',
         )
-        map_frame = self._render_map(step, state_name, interaction_observation, mapping_runtime)
+        map_frame = self._render_map(step, state_name, interaction_observation, mapping_runtime, target_context)
         camera_column = np.concatenate((rgb_frame, third_person_frame), axis=0)
         combined = np.concatenate((camera_column, map_frame), axis=1)
         self._writers['robot_rgb'].write(rgb_frame)
@@ -430,7 +430,7 @@ class InteractionVideoRecorder:
                 cv2.LINE_AA,
             )
 
-    def _render_map(self, step: int, state: str, interaction_observation, mapping_runtime):
+    def _render_map(self, step: int, state: str, interaction_observation, mapping_runtime, target_context=None):
         fused_map = mapping_runtime.map
         occupancy = fused_map.occupancy
         observed = occupancy.observed
@@ -549,6 +549,20 @@ class InteractionVideoRecorder:
 
         robot_pixel = self._world_to_pixel(interaction_observation.robot_position[:2], fused_map)
         cv2.circle(frame, robot_pixel, 11, (20, 230, 20), -1)
+        target_node = getattr(target_context, 'target_node', None)
+        if target_node is not None:
+            query = getattr(getattr(target_context, 'config', None), 'target_query', target_node.label)
+            target_pixel = self._world_to_pixel(target_node.position[:2], fused_map)
+            confirmed = bool(getattr(target_context, 'target_confirmed', False))
+            color = (0, 255, 255) if confirmed else (0, 180, 255)
+            cv2.circle(frame, target_pixel, 13, (0, 0, 0), 4, cv2.LINE_AA)
+            cv2.drawMarker(frame, target_pixel, color, cv2.MARKER_CROSS, 23, 3, cv2.LINE_AA)
+            label = f'{"TARGET" if confirmed else "CANDIDATE"}: {query}'
+            width, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)[0]
+            label_x = int(np.clip(target_pixel[0] + 16, 4, max(4, frame.shape[1] - width - 8)))
+            label_y = int(np.clip(target_pixel[1] - 10, 100, frame.shape[0] - 8))
+            cv2.putText(frame, label, (label_x, label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 5, cv2.LINE_AA)
+            cv2.putText(frame, label, (label_x, label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2, cv2.LINE_AA)
         stats = {
             'lidar_frames': fused_map.lidar_frames,
             'rgb_frames': fused_map.rgb_frames,
