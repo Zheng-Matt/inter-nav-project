@@ -4,7 +4,10 @@ import numpy as np
 from grutopia_extension.interactive_navigation.mapping import MappingConfig, SceneGraphMap, SemanticDetection
 from grutopia_extension.interactive_navigation.open_vocabulary_perception import OpenVocabularyPerception, OpenVocabularyPerceptionConfig, AgentVLMBackend, TargetObservationCue
 from grutopia_extension.interactive_navigation.semantic_exploration_component import SemanticExplorationComponent, SemanticExplorationConfig
-from tests.test_open_vocabulary_perception import _Session
+try:
+    from .test_open_vocabulary_perception import _Session
+except ImportError:  # unittest discover loads tests as top-level modules.
+    from test_open_vocabulary_perception import _Session
 
 
 class _Classifier:
