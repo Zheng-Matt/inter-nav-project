@@ -112,7 +112,11 @@ class Go2SemanticExplorationRunConfig:
     ground_height: float = 0.0
     # 'isaac' (ground-truth labels only), 'open_vocab' (VLM detections only),
     # or 'hybrid' (fused). See SemanticDetectionMode.
-    semantic_detection_mode: str = 'hybrid'
+    semantic_detection_mode: str = 'open_vocab'
+    semantic_classifier: str = 'qwen-vl'
+    qwen_vl_url: str = 'http://localhost:12185/classify'
+    qwen_vl_timeout: float = 60.0
+    qwen_vl_max_candidates: int = 12
     enable_qwen: bool = True
     qwen_model: str = 'Qwen/Qwen3-8B'
     qwen_python: str = os.environ.get('QWEN3_PYTHON', 'python'),
@@ -123,6 +127,10 @@ class Go2SemanticExplorationRunConfig:
     def __post_init__(self):
         if not self.target_query.strip():
             raise ValueError('target_query cannot be empty')
+        if self.semantic_classifier not in ('qwen-vl', 'clip'):
+            raise ValueError('semantic_classifier must be qwen-vl or clip')
+        if self.qwen_vl_timeout <= 0 or self.qwen_vl_max_candidates < 1:
+            raise ValueError('VL timeout and candidate count must be positive')
         if min(self.gpu, self.perception_gpu) < 0:
             raise ValueError('GPU indices cannot be negative')
         if self.max_steps <= 0 or self.mapping_warmup_steps < 0:
@@ -410,6 +418,10 @@ def run_go2_semantic_exploration(
                     clip_device=f'cuda:{run.perception_gpu}',
                     query_interval=0.25,
                     request_timeout=8.0,
+                    semantic_classifier=run.semantic_classifier,
+                    qwen_vl_url=run.qwen_vl_url,
+                    qwen_vl_timeout=run.qwen_vl_timeout,
+                    qwen_vl_max_candidates=run.qwen_vl_max_candidates,
                 )
             )
             try:
@@ -419,7 +431,7 @@ def run_go2_semantic_exploration(
                 if detection_mode is SemanticDetectionMode.OPEN_VOCABULARY:
                     raise RuntimeError(
                         'open_vocab requires ready GroundingDINO, MobileSAM, '
-                        f'and CLIP before the run starts: {type(error).__name__}: {error}'
+                        f'and {run.semantic_classifier} before the run starts: {type(error).__name__}: {error}'
                     ) from error
                 print(
                     json.dumps(
@@ -544,6 +556,7 @@ def run_go2_semantic_exploration(
                 max_forward_speed=profile.max_forward_speed,
                 max_lateral_speed=profile.max_lateral_speed,
                 semantic_detection_mode=detection_mode.value,
+                target_semantic_classifier=run.semantic_classifier if perception is not None else 'clip',
                 open_vocabulary_startup_error=perception_startup_error,
             ),
             perception=perception,

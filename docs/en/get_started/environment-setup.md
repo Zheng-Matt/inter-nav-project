@@ -1,5 +1,8 @@
 # Environment setup
 
+
+> The default demo now uses Qwen3-VL-8B-Instruct for object classification. Start the additional port 12185 service in its own environment; see [Qwen-VL integration](../../../grutopia/demo/QWEN_VL_SEMANTICS.md). Use `--semantic-classifier clip` for the legacy perception setup below.
+
 If you are on this lab server and your account is in the `embodied` group,
 skip this page and use the shared conda, weights, and scenes:
 

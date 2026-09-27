@@ -8,7 +8,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from grutopia_extension.interactive_navigation.mapping import MappingConfig, SceneGraphNode
+from grutopia_extension.interactive_navigation.mapping import MappingConfig, SceneGraphNode, canonical_semantic_label
 from grutopia_extension.interactive_navigation.mapping_runtime import (
     MapNavigationRuntime,
     SemanticDetectionMode,
@@ -42,6 +42,7 @@ class SemanticExplorationConfig:
     # detections only, `hybrid` = fused. See SemanticDetectionMode.
     semantic_detection_mode: str = 'hybrid'
     open_vocabulary_startup_error: Optional[str] = None
+    target_semantic_classifier: str = 'clip'
     target_min_observations: int = 2
     target_embedding_threshold: float = 0.24
     require_lexical_confirmation: bool = True
@@ -55,6 +56,8 @@ class SemanticExplorationConfig:
     max_lateral_speed: float = 0.20
 
     def __post_init__(self):
+        if self.target_semantic_classifier not in ('clip', 'qwen-vl'):
+            raise ValueError('target_semantic_classifier must be clip or qwen-vl')
         if not self.target_query.strip():
             raise ValueError('target_query cannot be empty')
         object.__setattr__(
@@ -176,7 +179,9 @@ class SemanticExplorationComponent:
         query = _normalize_label(self.config.target_query)
         matching_counts = [
             count for label, count in counts.items()
-            if query in _normalize_label(label) or _normalize_label(label) in query
+            if ((canonical_semantic_label(label) == canonical_semantic_label(query))
+                if self.config.target_semantic_classifier == 'qwen-vl'
+                else (query in _normalize_label(label) or _normalize_label(label) in query))
         ]
         return sum(matching_counts), sum(counts.values()), max(matching_counts, default=0)
 
@@ -461,8 +466,10 @@ class SemanticExplorationComponent:
         lexical = []
         for node in nodes:
             representative_matches = (
-                normalized_target in _normalize_label(node.label)
-                or _normalize_label(node.label) in normalized_target
+                canonical_semantic_label(node.label) == canonical_semantic_label(normalized_target)
+                if self.config.target_semantic_classifier == 'qwen-vl'
+                else (normalized_target in _normalize_label(node.label)
+                      or _normalize_label(node.label) in normalized_target)
             )
             matching, _, repeated_label = self._node_label_evidence(node)
             if representative_matches or (
@@ -490,6 +497,9 @@ class SemanticExplorationComponent:
         if lexical is not None:
             self._target_lexical = True
             return lexical
+        if self.config.target_semantic_classifier == 'qwen-vl':
+            # Qwen categories are explicit; CLIP similarity is not a class vote.
+            return None
         target_embedding = self._text_embedding()
         if target_embedding is None:
             return None

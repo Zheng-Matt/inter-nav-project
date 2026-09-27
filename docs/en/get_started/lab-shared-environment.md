@@ -1,5 +1,8 @@
 # Lab shared environment (this server)
 
+
+> The default demo now uses Qwen3-VL-8B-Instruct for object classification. Start the additional port 12185 service in its own environment; see [Qwen-VL integration](../../../grutopia/demo/QWEN_VL_SEMANTICS.md). Use `--semantic-classifier clip` for the legacy perception setup below.
+
 If your account is in the `embodied` group on this machine, **do not** install
 Isaac Sim or download models yourself. Code still comes from GitHub; conda,
 weights, and scenes are already on the shared disk.
@@ -71,7 +74,7 @@ $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
 
 This does not need Qwen, CLIP, or the HTTP perception services. `--detection-mode`
 takes `isaac` (ground truth only), `open_vocab` (VLM detections only), or
-`hybrid` (both, the default).
+`hybrid` (both).
 
 ## 4. Full semantic demo
 

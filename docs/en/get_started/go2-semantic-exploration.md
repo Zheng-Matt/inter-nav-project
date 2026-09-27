@@ -1,5 +1,8 @@
 # Go2 semantic Voronoi exploration
 
+
+> The default demo now uses Qwen3-VL-8B-Instruct for object classification. Start the additional port 12185 service in its own environment; see [Qwen-VL integration](../../../grutopia/demo/QWEN_VL_SEMANTICS.md). Use `--semantic-classifier clip` for the legacy perception setup below.
+
 `grutopia/demo/go2_semantic_exploration.py` explores an initially unknown
 occupancy map until Go2 finds and approaches a text-described object or area.
 
@@ -57,7 +60,7 @@ selection continues in deterministic geometric mode.
 | --- | --- | --- |
 | `isaac` | Isaac Sim semantic boxes only (ground truth) | no |
 | `open_vocab` | GroundingDINO + MobileSAM only | yes |
-| `hybrid` (default) | both, fused per object | yes, but degrades to `isaac` |
+| `hybrid` | both, fused per object | yes, but degrades to `isaac` |
 
 `open_vocab` never falls back to simulator labels. A ready stack that later
 fails three consecutive RGB queries aborts the run with the underlying error

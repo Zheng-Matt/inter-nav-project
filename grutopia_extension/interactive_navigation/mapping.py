@@ -506,7 +506,9 @@ class SceneGraphMap:
         return dict(self._object_label_counts.get(node_id, {}))
 
     def update_detections(self, detections: Iterable[SemanticDetection]):
-        for detection in detections:
+        # One representative per node and capture step. Process the strongest
+        # same-frame proposal first; cached results must not add evidence again.
+        for detection in sorted(detections, key=lambda item: (item.step, -item.confidence)):
             label = detection.label.strip() or 'unknown'
             labels = tuple(dict.fromkeys(
                 observed.strip()
@@ -516,10 +518,11 @@ class SceneGraphMap:
             candidates = [
                 node
                 for node in self._objects.values()
-                if (
-                    node.label == label
-                    or _embedding_similarity(node.embedding, detection.embedding) >= 0.86
-                )
+                # Image similarity alone cannot establish object identity across
+                # classes: keep their positions, counts and embeddings separate.
+                if (canonical_semantic_label(node.label) == canonical_semantic_label(label)
+                    or ('qwen_vl' not in detection.sources and 'qwen_vl' not in node.sources
+                        and _embedding_similarity(node.embedding, detection.embedding) >= 0.86))
                 and np.linalg.norm(
                     np.asarray(node.position[:2]) - np.asarray(detection.position[:2])
                 )
@@ -532,6 +535,8 @@ class SceneGraphMap:
                         np.asarray(candidate.position[:2]) - np.asarray(detection.position[:2])
                     ),
                 )
+                if 'qwen_vl' in detection.sources and int(detection.step) <= node.last_seen_step:
+                    continue
                 count = node.observations + 1
                 label_counts = self._object_label_counts.setdefault(
                     node.node_id, {node.label: node.observations}
@@ -956,6 +961,19 @@ def _color_label(color: Optional[Tuple[int, int, int]]) -> str:
 
 def _distance_xy(left: Vector3, right: Vector3) -> float:
     return hypot(left[0] - right[0], left[1] - right[1])
+
+
+def canonical_semantic_label(value: str) -> str:
+    """Normalize exact category names/aliases without guessing from substrings."""
+    label = ' '.join(str(value).casefold().replace('_', ' ').replace('-', ' ').split())
+    return {
+        'couch': 'sofa',
+        'fridge': 'refrigerator',
+        'potted plant': 'plant',
+        'tv': 'television',
+        'tv screen': 'television',
+        'television screen': 'television',
+    }.get(label, label)
 
 
 def _embedding_similarity(left, right) -> float:

@@ -46,7 +46,7 @@ python grutopia/demo/go2_semantic_exploration.py \
   --target refrigerator
 ```
 
-`--gpu` is Isaac Sim, `--perception-gpu` is CLIP, `--qwen-device` is the
+`--gpu` is Isaac Sim, `--perception-gpu` selects CLIP in the legacy classifier mode, and `--qwen-device` is the
 Qwen3-8B worker. Pick free GPUs on your machine. Change `--target` to
 `chair` or `plant` if you want a different object.
 
@@ -59,8 +59,8 @@ locomotion stack; only the origin of the object detections changes.
 | Command | Detections | Use it for |
 | --- | --- | --- |
 | `--detection-mode isaac` | Isaac Sim semantic boxes only (ground truth) | Geometry and planner debugging, an oracle upper bound on target recall, runs without any VLM service |
-| `--detection-mode open_vocab` | GroundingDINO + MobileSAM only | Measuring what the robot actually perceives, with no ground-truth leakage |
-| `--detection-mode hybrid` | Both, fused per object (default) | The full open-vocabulary exploration method |
+| `--detection-mode open_vocab` | GroundingDINO + MobileSAM + Qwen-VL (default) | Measuring what the robot actually perceives, with no ground-truth leakage |
+| `--detection-mode hybrid` | Both, fused per object | The full open-vocabulary exploration method |
 
 **1. Isaac ground truth only** — one GPU, no GroundingDINO, no MobileSAM, no Qwen:
 
@@ -72,7 +72,7 @@ $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
   --target refrigerator
 ```
 
-**2. Open vocabulary only** — requires the two HTTP services on the perception GPU:
+**2. Open vocabulary only** — requires DINO, SAM, and the Qwen-VL HTTP service:
 
 Start the services in two separate terminals (replace `cuda:1` with the
 perception GPU you selected):
@@ -88,11 +88,20 @@ $QWEN3_PYTHON grutopia/demo/serve_semantic_perception.py mobile-sam \
   --mobile-sam-checkpoint grutopia/assets/models/mobile_sam.pt
 ```
 
-Verify both endpoints before starting Isaac:
+Start Qwen-VL in an independent environment with local weights (see
+[Qwen-VL setup and integration notes](grutopia/demo/QWEN_VL_SEMANTICS.md)):
+
+```bash
+$QWEN_VL_PYTHON grutopia/demo/serve_semantic_perception.py qwen-vl \
+  --qwen-vl-model "$QWEN_VL_MODEL" --device cuda:3 --port 12185
+```
+
+Verify all three endpoints before starting Isaac:
 
 ```bash
 curl -fsS http://127.0.0.1:12181/health
 curl -fsS http://127.0.0.1:12183/health
+curl -fsS http://127.0.0.1:12185/health
 ```
 
 ```bash
@@ -105,7 +114,7 @@ $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
 ```
 
 **3. Hybrid** — ground-truth labels fused with open-vocabulary detections
-(this is the default, so `--detection-mode` may be omitted):
+(choose this mode explicitly):
 
 ```bash
 $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
@@ -121,7 +130,7 @@ How the three modes differ at runtime:
 - `isaac` ignores the open-vocabulary stack entirely; GroundingDINO is never
   queried, so `open_vocabulary_frames` stays `0`.
 - `open_vocab` never falls back to simulator labels. It checks GroundingDINO,
-  MobileSAM, and local CLIP before Isaac starts, and rejects an unavailable
+  MobileSAM, and Qwen-VL (or CLIP when explicitly selected) before Isaac starts, and rejects an unavailable
   stack with an explicit error. If a ready service later fails three
   consecutive RGB queries, the run stops instead of exploring with an empty
   semantic graph.
@@ -131,7 +140,7 @@ How the three modes differ at runtime:
   are unreachable.
 
 Recorded runs identify their source, so results stay comparable: every
-scene-graph node carries `sources` (`isaac`, `open_vocabulary`, or both) and
+scene-graph node carries `sources` (`isaac`, `open_vocabulary`, `qwen_vl`, or their combinations) and
 every statistics block reports `semantic_detection_mode`.
 For degraded hybrid runs, `semantic_detection_effective_mode`,
 `open_vocabulary_available`, and `open_vocabulary_startup_error` preserve what
@@ -174,8 +183,9 @@ compares the earlier failures with the label-fusion rerun.
 
 1. `SemanticVoronoiGraph` builds a safe medial-axis skeleton on observed free
    space, plus room-like regions and doorways.
-2. `OpenVocabularyPerception` sends RGB to GroundingDINO + MobileSAM and
-   stores CLIP embeddings. `--detection-mode` picks between these detections,
+2. `OpenVocabularyPerception` sends RGB to GroundingDINO + MobileSAM, then
+   Qwen3-VL-8B-Instruct classifies marked context crops. The legacy CLIP mode
+   remains available through `--semantic-classifier clip`. `--detection-mode` picks between these detections,
    the Isaac simulator labels, or a fusion of both.
 3. `AdaptiveExplorationPlanner` ranks frontiers. A local Qwen3-8B worker may
    rerank the bounded topology JSON. The model never sends locomotion

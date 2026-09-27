@@ -6,6 +6,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from grutopia_extension.interactive_navigation.mapping import canonical_semantic_label
+
 
 class FixedOverviewCamera:
     """Fixed wide camera covering the complete generated household scene."""
@@ -227,7 +229,8 @@ class InteractionVideoRecorder:
             state_name,
             robot_observation,
             'camera',
-            'Robot RGB (GroundingDINO)' if uses_open_vocabulary else 'Robot RGB (Isaac GT)',
+            ('Robot RGB (DINO + Qwen-VL)' if getattr(getattr(perception, 'config', None), 'semantic_classifier', '') == 'qwen-vl'
+             else 'Robot RGB (GroundingDINO)') if uses_open_vocabulary else 'Robot RGB (Isaac GT)',
             model_only=uses_open_vocabulary,
             detection_frame=debug_frame,
         )
@@ -359,18 +362,27 @@ class InteractionVideoRecorder:
             return
         scale_x = self.rgb_size[0] / source_width
         scale_y = self.rgb_size[1] / source_height
+        mapped = detection_frame.get('classified') or detection_frame.get('mapped', ())
+        target = canonical_semantic_label(detection_frame.get('target_query', ''))
         for box in detection_frame.get('boxes', ()):
             coords = box.get('bbox_xyxy')
             if coords is None:
                 continue
             x_min, y_min, x_max, y_max = coords
-            color = (220, 60, 230) if box.get('above_threshold') else (150, 150, 150)
+            classification = next((item for item in mapped
+                                   if item.get('proposal_source') == box.get('proposal_source')
+                                   and len(item.get('bbox_xyxy', ())) == 4
+                                   and np.allclose(item['bbox_xyxy'], coords)), None)
+            final_label = None if classification is None else classification.get('label')
+            color = (0, 0, 255) if final_label and canonical_semantic_label(final_label) == target else ((220, 60, 230) if box.get('above_threshold') else (150, 150, 150))
+            label = box['label'] if final_label is None or final_label == box['label'] else f"{box['label']} -> {final_label}"
+
             start = (int(x_min * scale_x), int(y_min * scale_y))
             end = (int(x_max * scale_x), int(y_max * scale_y))
             cv2.rectangle(frame, start, end, color, 2)
             cv2.putText(
                 frame,
-                f"{box['label']} {box['confidence']:.2f}",
+                f"{label} {box['confidence']:.2f}",
                 (start[0], max(42, start[1] - 4)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 1, cv2.LINE_AA,
             )

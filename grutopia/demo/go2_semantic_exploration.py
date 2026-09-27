@@ -71,13 +71,18 @@ def parse_args():
     parser.add_argument(
         '--detection-mode',
         choices=tuple(mode.value for mode in SemanticDetectionMode),
-        default=SemanticDetectionMode.HYBRID.value,
+        default=SemanticDetectionMode.OPEN_VOCABULARY.value,
         help=(
             'isaac: simulator ground-truth semantic labels only; '
             'open_vocab: GroundingDINO + MobileSAM detections only; '
-            'hybrid: fuse both (default)'
+            'hybrid: fuse both'
         ),
     )
+    parser.add_argument('--semantic-classifier', choices=('qwen-vl', 'clip'), default='qwen-vl',
+                        help='Qwen-VL classifies marked RGB crops; CLIP retains the legacy path.')
+    parser.add_argument('--qwen-vl-url', default='http://localhost:12185/classify')
+    parser.add_argument('--qwen-vl-timeout', type=float, default=60.0)
+    parser.add_argument('--qwen-vl-max-candidates', type=int, default=12)
     parser.add_argument(
         '--qwen',
         action=argparse.BooleanOptionalAction,
@@ -211,6 +216,10 @@ def main():
             robot_usd_path=args.robot_usd,
             generate_fallback_asset=args.generate_fallback_asset,
             semantic_detection_mode=args.detection_mode,
+            semantic_classifier=args.semantic_classifier,
+            qwen_vl_url=args.qwen_vl_url,
+            qwen_vl_timeout=args.qwen_vl_timeout,
+            qwen_vl_max_candidates=args.qwen_vl_max_candidates,
             enable_qwen=args.qwen,
             qwen_model=args.qwen_model,
             qwen_python=args.qwen_python,
