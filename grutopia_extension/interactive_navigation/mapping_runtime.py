@@ -1,7 +1,8 @@
 """Runtime glue from GRUtopia sensor observations to the fused map."""
 
 import json
-from dataclasses import asdict
+from collections import deque
+from dataclasses import asdict, replace
 from math import atan2, cos, pi, sin
 from pathlib import Path
 from typing import Iterable, Optional
@@ -52,7 +53,12 @@ class MapNavigationRuntime:
         semantic_voronoi_config=None,
         topology_update_interval: int = 40,
         prefer_voronoi_paths: bool = False,
+        semantic_source: str = 'mixed',
     ):
+        if semantic_source not in ('mixed', 'model'):
+            raise ValueError('semantic_source must be mixed or model')
+        if semantic_source == 'model' and (open_vocabulary_perception is None or not semantic_target):
+            raise ValueError('model semantics requires perception and a target query')
         if lidar_interval <= 0 or rgb_interval <= 0:
             raise ValueError('sensor update intervals must be positive')
         if replan_lookahead_distance is not None and replan_lookahead_distance <= 0:
@@ -74,6 +80,12 @@ class MapNavigationRuntime:
         self.replan_lookahead_distance = replan_lookahead_distance
         self.semantic_target = str(semantic_target).strip()
         self.open_vocabulary_perception = open_vocabulary_perception
+        self.semantic_source = semantic_source
+        self.model_semantic_observations = 0
+        self.simulator_semantic_observations = 0
+        self.last_model_camera = None
+        # Fresh model evidence for arrival verification; no additional inference.
+        self.model_confirmation_observations = []
         self.open_vocabulary_frames = 0
         self.open_vocabulary_failures = 0
         self.topology_update_interval = int(topology_update_interval)
@@ -105,10 +117,15 @@ class MapNavigationRuntime:
         self._last_lidar_physics_step = -1
         self._planned_state: Optional[InteractionState] = None
         self._planned_path = None
+        self._planned_goal = None
         self._waypoint_index = 0
         self._planned_paths = {}
         self._plan_history = []
         self.planning_failures = 0
+        self.last_planning_error = None
+        self._reachability_blocked = None
+        self._reachability_mask = None
+        self._reachability_step = None
         self.replan_count = 0
         self._progress_position = None
         self._progress_step = None
@@ -160,6 +177,7 @@ class MapNavigationRuntime:
             known_labels.add(label)
 
     def update(self, step: int, robot_observation: dict):
+        self.model_confirmation_observations = []
         if step % self.topology_update_interval == 0:
             # Low-frequency maintenance before new evidence arrives: cells that
             # stayed weak and isolated through the whole interval are noise,
@@ -248,7 +266,10 @@ class MapNavigationRuntime:
                 )
 
     def _camera_semantic_detections(self, camera: dict, point_image, step: int):
-        fallback = tuple(_semantic_detections(camera, point_image))
+        fallback = () if self.semantic_source == 'model' else tuple(
+            replace(detection, step=step) for detection in _semantic_detections(camera, point_image)
+        )
+        self.simulator_semantic_observations += len(fallback)
         if self.open_vocabulary_perception is None or not self.semantic_target:
             return fallback
         try:
@@ -261,11 +282,39 @@ class MapNavigationRuntime:
             )
             semantic_detections = []
             for detection in detections:
+                if not getattr(detection, 'semantic_eligible', True):
+                    continue
                 if isinstance(detection, SemanticDetection):
                     semantic_detections.append(detection)
                 elif hasattr(detection, 'to_semantic_detection'):
                     semantic_detections.append(detection.to_semantic_detection())
+                else:
+                    continue
+                semantic = semantic_detections[-1]
+                if int(semantic.step) == step and hasattr(detection, 'bbox'):
+                    self.model_confirmation_observations.append({
+                        'step': int(semantic.step), 'label': semantic.label,
+                        'position': tuple(float(v) for v in semantic.position),
+                        'bbox': tuple(float(v) for v in detection.bbox),
+                        'image_shape': tuple(int(v) for v in np.asarray(camera['rgba']).shape[:2]),
+                        'confidence': float(semantic.confidence),
+                    })
             self.open_vocabulary_frames += 1
+            self.model_semantic_observations += len(semantic_detections)
+            if self.semantic_source == 'model':
+                # Keep boxes paired with the exact RGB input, not a newer
+                # recording frame. No extra model call for visualization.
+                self.last_model_camera = {
+                    'rgba': np.array(camera['rgba'], copy=True),
+                    'model_step': step,
+                    'model_detections': [
+                        {'label': d.label, 'confidence': float(d.confidence),
+                         'bbox': tuple(float(v) for v in d.bbox),
+                         'semantic_eligible': getattr(d, 'semantic_eligible', True),
+                         'evidence_reason': getattr(d, 'evidence_reason', 'accepted')}
+                        for d in detections if hasattr(d, 'bbox')
+                    ],
+                }
             # Open-vocabulary detections enrich the camera's ground-truth
             # semantics instead of replacing them: dropping the fallback hid
             # target classes (e.g. refrigerator) from the scene graph whenever
@@ -273,8 +322,24 @@ class MapNavigationRuntime:
             # matching could never fire.
             return tuple(semantic_detections) + fallback
         except Exception:
+            self.model_confirmation_observations = []
             self.open_vocabulary_failures += 1
+            if self.semantic_source == 'model':
+                self.last_model_camera = None
+                raise
             return fallback
+
+    def invalidate_navigation_plan(self, reason: str, step: Optional[int] = None):
+        """Discard a route when its meaning changes, even at the same XY goal."""
+        if self._planned_path is not None:
+            self.replan_count += 1
+        self._planned_path = None
+        self._planned_goal = None
+        self._waypoint_index = 0
+        self._last_plan_step = None
+        self._progress_position = None
+        self._progress_step = None
+        print(f'[NAV_PLAN_INVALIDATED] step={step} reason={reason}', flush=True)
 
     def action_for(
         self,
@@ -365,8 +430,14 @@ class MapNavigationRuntime:
                 'move_by_speed',
                 tuple(self._aligned_speed_data(0.0, robot_observation['orientation'])),
             ).as_action()
-        if self._planned_state != decision.state:
+        goal_changed = self._planned_goal is not None and np.linalg.norm(
+            np.asarray(goal[:2]) - np.asarray(self._planned_goal[:2])
+        ) > 1e-6
+        if goal_changed:
+            self.invalidate_navigation_plan('goal_changed', step)
+        if self._planned_state != decision.state or self._planned_path is None:
             self._planned_path = None
+            self._waypoint_index = 0
             self._progress_position = np.asarray(start[:2])
             self._progress_step = step
             self._last_plan_step = None
@@ -424,10 +495,13 @@ class MapNavigationRuntime:
                 )
             try:
                 self._planned_path = self._plan_with_final_heading(decision.state, start, goal)
-            except PlanningError:
+            except PlanningError as error:
                 self.planning_failures += 1
+                self.last_planning_error = str(error)
                 return ControllerCommand('move_by_speed', (0.0, 0.0, 0.0)).as_action()
+            self.last_planning_error = None
             self._planned_state = decision.state
+            self._planned_goal = goal
             self._waypoint_index = 0
             self._last_plan_step = step
             self._planned_paths[decision.state.value] = self._planned_path
@@ -435,6 +509,7 @@ class MapNavigationRuntime:
                 {
                     'step': step,
                     'state': decision.state.value,
+                    'requested_goal': list(goal),
                     'path': [list(point) for point in self._planned_path],
                 }
             )
@@ -763,6 +838,58 @@ class MapNavigationRuntime:
         path.extend(final_leg)
         return self._densify_waypoints(path, max_spacing=0.45)
 
+    def reachable_mask(self, start, step: int, force: bool = False):
+        """Cheap endpoint prefilter using the same eight-neighbour grid as A*.
+
+        Unknown transit cells retain the existing A* policy; callers still
+        require observed free endpoints. Refresh at most once per topology
+        interval unless an endpoint is being selected or a plan has failed.
+        """
+        occupancy = self.map.occupancy
+        start_cell = occupancy.world_to_cell(start[:2])
+        if start_cell is None:
+            return np.zeros(occupancy.observed.shape, dtype=bool)
+        if (not force and self._reachability_mask is not None
+                and self._reachability_step is not None
+                and step - self._reachability_step < self.topology_update_interval
+                and self._reachability_mask[start_cell]):
+            return self._reachability_mask
+        blocked = occupancy.inflated_mask()
+        try:
+            # Match A*'s recovery when the robot's cell falls inside inflation.
+            seed = self.map.planner._nearest_open(start_cell, blocked)
+        except PlanningError:
+            return np.zeros(blocked.shape, dtype=bool)
+        self._reachability_step = step
+        if (self._reachability_mask is not None and self._reachability_mask[seed]
+                and np.array_equal(blocked, self._reachability_blocked)):
+            return self._reachability_mask
+        reachable = np.zeros(blocked.shape, dtype=bool)
+        reachable[seed] = True
+        pending = deque([seed])
+        height, width = blocked.shape
+        while pending:
+            row, col = pending.popleft()
+            for dr, dc, _ in self.map.planner._NEIGHBORS:
+                nr, nc = row + dr, col + dc
+                if (0 <= nr < height and 0 <= nc < width
+                        and not blocked[nr, nc] and not reachable[nr, nc]):
+                    reachable[nr, nc] = True
+                    pending.append((nr, nc))
+        self._reachability_blocked = blocked.copy()
+        self._reachability_mask = reachable
+        return reachable
+
+    def remaining_navigation_distance(self, position):
+        """Remaining polyline length, used to detect stalled semantic navigation."""
+        if not self._planned_path:
+            return None
+        points = np.asarray(self._planned_path[self._waypoint_index:], dtype=np.float64)[:, :2]
+        if not len(points):
+            return None
+        return float(np.linalg.norm(points[0] - np.asarray(position[:2]))
+                     + np.linalg.norm(np.diff(points, axis=0), axis=1).sum())
+
     def _map_plan(self, start, goal):
         if self.voronoi_planner is not None:
             try:
@@ -846,6 +973,9 @@ class MapNavigationRuntime:
                 'trajectory_static_obstacle_violations': self._static_obstacle_violations,
                 'violated_static_obstacle_labels': sorted(self._violated_static_labels),
                 'semantic_target': self.semantic_target,
+                'semantic_source': self.semantic_source,
+                'model_semantic_observations': self.model_semantic_observations,
+                'simulator_semantic_observations': self.simulator_semantic_observations,
                 'open_vocabulary_frames': self.open_vocabulary_frames,
                 'open_vocabulary_failures': self.open_vocabulary_failures,
                 'voronoi_plans': self.voronoi_plan_count,

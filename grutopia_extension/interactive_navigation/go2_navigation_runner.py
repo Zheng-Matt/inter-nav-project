@@ -6,6 +6,7 @@ import os
 import time
 import traceback
 from dataclasses import dataclass
+from itertools import count
 from pathlib import Path
 from typing import Sequence, Tuple
 
@@ -55,7 +56,7 @@ class Go2NavigationRunConfig:
     log_every: int = 100
     record_dir: str = ''
     record_every: int = 20
-    video_fps: float = 12.0
+    video_fps: float = 12.0    
     map_output: str = ''
     goal_index: int = 0
     policy_path: str = DEFAULT_GO2_POLICY_PATH
@@ -106,19 +107,39 @@ class Go2SemanticExplorationRunConfig:
     generate_fallback_asset: bool = True
     ground_height: float = 0.0
     enable_open_vocabulary: bool = True
+    semantic_source: str = 'model'
     enable_qwen: bool = True
     qwen_model: str = 'Qwen/Qwen3-8B'
     qwen_python: str = os.environ.get('QWEN3_PYTHON', 'python'),
     rendering_interval: int = 4
     use_fabric: bool = False
+    label_refinement: bool = True
+    label_refinement_margin: float = 0.08
+    label_refinement_min_similarity: float = 0.25
+    semantic_classifier: str = 'qwen-vl'
+    qwen_vl_url: str = 'http://localhost:12185/classify'
+    qwen_vl_timeout: float = 60.0
+    qwen_vl_max_candidates: int = 12
 
     def __post_init__(self):
         if not self.target_query.strip():
             raise ValueError('target_query cannot be empty')
         if min(self.gpu, self.perception_gpu) < 0:
             raise ValueError('GPU indices cannot be negative')
-        if self.max_steps <= 0 or self.mapping_warmup_steps < 0:
-            raise ValueError('max_steps must be positive and warmup cannot be negative')
+        if self.max_steps < 0 or self.mapping_warmup_steps < 0:
+            raise ValueError('max_steps and warmup cannot be negative; max_steps=0 is unlimited')
+        if self.semantic_source not in ('mixed', 'model'):
+            raise ValueError('semantic_source must be mixed or model')
+        if self.semantic_source == 'model' and not self.enable_open_vocabulary:
+            raise ValueError('model semantics requires open-vocabulary perception')
+        if self.semantic_classifier not in ('qwen-vl', 'clip'):
+            raise ValueError('semantic_classifier must be qwen-vl or clip')
+        if self.qwen_vl_timeout <= 0 or self.qwen_vl_max_candidates < 1 or not self.qwen_vl_url.strip():
+            raise ValueError('Qwen-VL requires a URL, positive timeout and candidate limit')
+        if not 0 < self.label_refinement_margin <= 2:
+            raise ValueError('label_refinement_margin must be in (0, 2]')
+        if not -1 <= self.label_refinement_min_similarity <= 1:
+            raise ValueError('label_refinement_min_similarity must be between -1 and 1')
         if self.log_every <= 0 or self.record_every <= 0 or self.video_fps <= 0:
             raise ValueError('logging and recording intervals must be positive')
         if self.rendering_interval <= 0:
@@ -359,7 +380,9 @@ def run_go2_semantic_exploration(
             Go2NavigationRunConfig(
                 gpu=run.gpu,
                 headless=run.headless,
-                max_steps=run.max_steps,
+                # This config builds sensors/physics only; the semantic loop
+                # below owns its independent (possibly unlimited) step budget.
+                max_steps=max(1, run.max_steps),
                 mapping_warmup_steps=run.mapping_warmup_steps,
                 log_every=run.log_every,
                 record_dir=run.record_dir,
@@ -404,7 +427,8 @@ def run_go2_semantic_exploration(
             )
         active_task = next(iter(env.runner.current_tasks.values()))
         active_robot = next(iter(active_task.robots.values()))
-        _label_go2_and_household_semantics(profile, active_robot.config.prim_path)
+        if run.semantic_source != 'model':
+            _label_go2_and_household_semantics(profile, active_robot.config.prim_path)
         _apply_high_friction_material('/World/env_0/objects/grscene_go2_floor')
 
         perception = None
@@ -412,6 +436,18 @@ def run_go2_semantic_exploration(
             perception = OpenVocabularyPerception(
                 OpenVocabularyPerceptionConfig(
                     clip_device=f'cuda:{run.perception_gpu}',
+                    semantic_classifier=run.semantic_classifier,
+                    qwen_vl_url=run.qwen_vl_url,
+                    qwen_vl_timeout=run.qwen_vl_timeout,
+                    qwen_vl_max_candidates=run.qwen_vl_max_candidates,
+                    strict_errors=run.semantic_source == 'model',
+                    label_refinement=run.label_refinement,
+                    label_refinement_margin=run.label_refinement_margin,
+                    label_refinement_min_similarity=run.label_refinement_min_similarity,
+                    label_audit_path=(
+                        str(Path(run.record_dir) / 'label_refinement.jsonl')
+                        if run.record_dir else None
+                    ),
                     query_interval=0.25,
                     request_timeout=8.0,
                 )
@@ -453,6 +489,7 @@ def run_go2_semantic_exploration(
         component = SemanticExplorationComponent(
             SemanticExplorationConfig(
                 target_query=run.target_query,
+                semantic_source=run.semantic_source,
                 mapping=profile.mapping,
                 max_steps=run.max_steps,
                 target_distance=profile.success_distance,
@@ -466,15 +503,22 @@ def run_go2_semantic_exploration(
         )
         # Boxes are kept for collision statistics only: the exploration map
         # must start empty and grow purely from online sensing.
-        component.mapping.seed_static_obstacles(
-            load_profile_static_obstacles(profile),
-            mark_occupancy=False,
-        )
+        if run.semantic_source != 'model':
+            component.mapping.seed_static_obstacles(
+                load_profile_static_obstacles(profile),
+                mark_occupancy=False,
+            )
+        print(json.dumps({
+            'event': 'semantic_source', 'source': run.semantic_source,
+            'simulator_semantics': run.semantic_source != 'model',
+            'max_steps': run.max_steps,
+        }), flush=True)
         sensor_rig = NavigationSensorRig(
             offset=GO2_FIRST_PERSON_OFFSET,
             pitch_degrees=GO2_FIRST_PERSON_PITCH_DEGREES,
             horizontal_fov_degrees=96.0,
             rgb_interval=component.mapping.rgb_interval,
+            enable_semantics=run.semantic_source != 'model',
         )
         if run.record_dir:
             recorder = NavigationRecordingSession(
@@ -488,6 +532,7 @@ def run_go2_semantic_exploration(
                 third_person_offset=profile.third_person_offset,
                 third_person_pitch_degrees=profile.third_person_pitch_degrees,
                 third_person_fov_degrees=profile.third_person_fov_degrees,
+                enable_semantics=run.semantic_source != 'model',
             )
             recorder.prime(robot_observation)
         sensor_rig.prime(robot_observation)
@@ -518,7 +563,7 @@ def run_go2_semantic_exploration(
                 'env_step': 0.0,
                 'steps': 0,
             }
-        for step in range(run.max_steps):
+        for step in (count() if run.max_steps == 0 else range(run.max_steps)):
             t0 = time.perf_counter() if timing is not None else 0.0
             sensor_rig.update(
                 step,

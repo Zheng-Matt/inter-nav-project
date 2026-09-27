@@ -26,6 +26,7 @@ class NavigationSensorRig:
         horizontal_fov_degrees: float = 96.0,
         clipping_range=G1_FIRST_PERSON_CLIPPING_RANGE,
         rgb_interval: int = 24,
+        enable_semantics: bool = True,
     ):
         if rgb_interval <= 0:
             raise ValueError('rgb_interval must be positive')
@@ -37,6 +38,7 @@ class NavigationSensorRig:
             horizontal_fov_degrees=horizontal_fov_degrees,
             clipping_range=clipping_range,
             enable_depth=True,
+            enable_semantics=enable_semantics,
         )
         self._cached_data: Optional[dict] = None
         self.frames = 0

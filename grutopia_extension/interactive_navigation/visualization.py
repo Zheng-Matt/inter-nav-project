@@ -5,6 +5,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from grutopia_extension.interactive_navigation.mapping import canonical_semantic_label
+
 
 class FixedOverviewCamera:
     """Fixed wide camera covering the complete generated household scene."""
@@ -15,6 +17,7 @@ class FixedOverviewCamera:
         position=(4.0, -7.0, 4.5),
         look_at=(4.0, 0.0, 0.8),
         focal_length=18.0,
+        enable_semantics=True,
     ):
         import omni.replicator.core as rep
 
@@ -26,13 +29,17 @@ class FixedOverviewCamera:
         self.render_product = rep.create.render_product(self.camera, resolution)
         self.annotator = rep.AnnotatorRegistry.get_annotator('LdrColor')
         self.annotator.attach(self.render_product)
-        self.bounding_box_annotator = rep.AnnotatorRegistry.get_annotator('bounding_box_2d_tight')
-        self.bounding_box_annotator.attach(self.render_product)
+        self.bounding_box_annotator = None
+        if enable_semantics:
+            self.bounding_box_annotator = rep.AnnotatorRegistry.get_annotator('bounding_box_2d_tight')
+            self.bounding_box_annotator.attach(self.render_product)
 
     def get_data(self):
         return {
             'rgba': self.annotator.get_data(),
-            'bounding_box_2d_tight': self.bounding_box_annotator.get_data(),
+            'bounding_box_2d_tight': (
+                self.bounding_box_annotator.get_data() if self.bounding_box_annotator is not None else None
+            ),
         }
 
 
@@ -56,6 +63,21 @@ def following_camera_world_pose(position, yaw, offset, pitch_degrees):
     return camera_position, camera_orientation
 
 
+def model_only_recording_observation(robot_observation, mapping_runtime):
+    """Remove simulator overlays and pair model boxes with their source RGB."""
+    sensors = {
+        name: {key: value for key, value in data.items() if key != 'bounding_box_2d_tight'}
+        for name, data in robot_observation.get('sensors', {}).items()
+    }
+    model_camera = getattr(mapping_runtime, 'last_model_camera', None)
+    if model_camera is not None:
+        sensors['camera'] = {
+            **model_camera,
+            'semantic_target': getattr(mapping_runtime, 'semantic_target', ''),
+        }
+    return {**robot_observation, 'sensors': sensors}
+
+
 class FollowingRobotCamera:
     """World-frame RGB camera following a robot whose +X axis is forward."""
 
@@ -68,6 +90,7 @@ class FollowingRobotCamera:
         clipping_range=(0.01, 80.0),
         enable_depth=False,
         prim_path='/World/FollowingRobotCamera',
+        enable_semantics=True,
     ):
         from omni.isaac.sensor import Camera
 
@@ -91,7 +114,8 @@ class FollowingRobotCamera:
             2.0 * np.tan(horizontal_fov_radians / 2.0)
         )
         self.camera.set_focal_length(float(focal_length))
-        self.camera.add_bounding_box_2d_tight_to_frame()
+        if enable_semantics:
+            self.camera.add_bounding_box_2d_tight_to_frame()
         if self.enable_depth:
             self.camera.add_distance_to_image_plane_to_frame()
 
@@ -204,6 +228,8 @@ class InteractionVideoRecorder:
     def capture(self, step: int, state, robot_observation: dict, interaction_observation, mapping_runtime):
         if step % self.capture_interval != 0:
             return
+        if getattr(mapping_runtime, 'semantic_source', 'mixed') == 'model':
+            robot_observation = model_only_recording_observation(robot_observation, mapping_runtime)
         position = tuple(float(value) for value in interaction_observation.robot_position)
         if self._trajectory and np.linalg.norm(np.asarray(position[:2]) - np.asarray(self._trajectory[-1][:2])) > 0.75:
             self._trajectory_breaks.add(len(self._trajectory))
@@ -260,9 +286,34 @@ class InteractionVideoRecorder:
             else:
                 frame = cv2.cvtColor(image[..., :3].astype(np.uint8), cv2.COLOR_RGB2BGR)
                 frame = cv2.resize(frame, self.rgb_size, interpolation=cv2.INTER_NEAREST)
-                self._draw_camera_boxes(frame, camera, image.shape[1], image.shape[0])
+                if 'model_detections' in camera:
+                    self._draw_model_boxes(frame, camera, image.shape[1], image.shape[0])
+                else:
+                    self._draw_camera_boxes(frame, camera, image.shape[1], image.shape[0])
+        if 'model_step' in camera:
+            title = f'Model RGB (observed step {camera["model_step"]})'
         self._header(frame, f'{title} | step {step} | {state}')
         return frame
+
+    def _draw_model_boxes(self, frame, camera, source_width, source_height):
+        scale_x, scale_y = self.rgb_size[0] / source_width, self.rgb_size[1] / source_height
+        target = canonical_semantic_label(camera.get('semantic_target', ''))
+
+        def matches_target(detection):
+            return bool(target) and canonical_semantic_label(detection['label']) == target
+
+        # Draw target-class predictions last so context boxes do not cover them.
+        # Red denotes the predicted category, not confirmed navigation success.
+        for detection in sorted(camera['model_detections'], key=matches_target):
+            x0, y0, x1, y1 = detection['bbox']
+            start = (int(x0 * scale_x), int(y0 * scale_y))
+            end = (int(x1 * scale_x), int(y1 * scale_y))
+            is_target = matches_target(detection)
+            color = (0, 0, 255) if is_target else (0, 220, 255)  # OpenCV BGR
+            cv2.rectangle(frame, start, end, color, 2 if is_target else 1)
+            label = f'{detection["label"]} {detection["confidence"]:.2f}'
+            cv2.putText(frame, label, (start[0], max(40, start[1] - 3)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, color, 1, cv2.LINE_AA)
 
     def _draw_camera_boxes(self, frame, camera, source_width: int, source_height: int):
         bounding_boxes = camera.get('bounding_box_2d_tight')

@@ -468,11 +468,13 @@ class AdaptiveExplorationPlanner:
         target_direction: Optional[Sequence[float]] = None,
         semantic_evidence: Optional[float] = None,
         model_available: Optional[bool] = None,
+        excluded_frontier_ids: Iterable[str] = (),
     ) -> Tuple[ExplorationDecision, Optional[Position]]:
         raw_frontiers = tuple(
             _items(semantic_voronoi, 'frontiers') if frontiers is None else frontiers
         )
         occupancy = _value(occupancy, 'occupancy', occupancy)
+        excluded = self.blacklist | set(excluded_frontier_ids)
         candidates = [
             self._candidate(item, index, robot_position, semantic_voronoi, occupancy, target_direction)
             for index, item in enumerate(raw_frontiers)
@@ -480,7 +482,7 @@ class AdaptiveExplorationPlanner:
         candidates = [
             candidate
             for candidate in candidates
-            if candidate.frontier_id not in self.blacklist and math.isfinite(candidate.path_distance)
+            if candidate.frontier_id not in excluded and math.isfinite(candidate.path_distance)
         ]
         evidence = self._semantic_evidence(semantic_voronoi) if semantic_evidence is None else float(semantic_evidence)
         available = self.scorer is not None and self.scorer.available

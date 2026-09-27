@@ -89,7 +89,7 @@ class SimulatorRuntime:
     @staticmethod
     def read_yaml_file(file_path) -> Dict:
         if file_path:
-            if not file_path.endswith('.yaml') or file_path.endswith('.yml'):
+            if  not file_path.endswith(('.yaml', '.yml')):
                 log.error('runtime file not end with .yaml or .yml')
                 raise FileNotFoundError('runtime file not end with .yaml or .yml')
             with open(file_path, 'r') as f:
@@ -128,6 +128,7 @@ class SimulatorRuntime:
         log.debug('SimulatorRuntime init done')
 
     def active_runtime(self) -> Dict[str, TaskRuntime]:
+
         """
         Get active runtimes.
         """

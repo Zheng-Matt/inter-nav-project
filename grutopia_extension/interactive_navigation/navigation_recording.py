@@ -23,6 +23,7 @@ class NavigationRecordingSession:
         third_person_offset=(-0.70, 0.0, 1.55),
         third_person_pitch_degrees: float = 50.0,
         third_person_fov_degrees: float = 80.0,
+        enable_semantics: bool = True,
     ):
         self.capture_interval = capture_interval
         # Navigation platforms (Go2/G1) have no tp_camera; recording that
@@ -42,12 +43,14 @@ class NavigationRecordingSession:
                 pitch_degrees=third_person_pitch_degrees,
                 horizontal_fov_degrees=third_person_fov_degrees,
                 prim_path='/World/FollowingThirdPersonCamera',
+                enable_semantics=enable_semantics,
             )
         else:
             self.overview_camera = FixedOverviewCamera(
                 position=overview_position,
                 look_at=overview_look_at,
                 focal_length=overview_focal_length,
+                enable_semantics=enable_semantics,
             )
         self._closed = False
 

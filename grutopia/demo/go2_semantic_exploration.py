@@ -37,7 +37,17 @@ GRSCENE_FLOOR_TOP = 0.15
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        '--portable-root',
+        default=os.environ.get('INTERNAV_KIT_ROOT')
+        or os.path.expanduser('~/.local/share/inter-nav-kit'),
+        help='Writable personal Kit cache/data/log directory (default: INTERNAV_KIT_ROOT or ~/.local/share/inter-nav-kit).',
+    )
     parser.add_argument('--target', default='refrigerator')
+    parser.add_argument(
+        '--semantic-source', choices=('mixed', 'model'), default='model',     #model or mixed
+        help='model: use only model predictions; never use simulator semantic labels.',
+    )
     parser.add_argument(
         '--scene',
         choices=('grscene', 'programmatic'),
@@ -51,7 +61,7 @@ def parse_args():
     parser.add_argument('--gpu', type=int, default=1)
     parser.add_argument('--perception-gpu', type=int, default=5)
     parser.add_argument('--qwen-device', default='cuda:4')
-    parser.add_argument('--max-steps', type=int, default=12000)
+    parser.add_argument('--max-steps', type=int, default=12000, help='0 disables the step limit.')
     parser.add_argument('--mapping-warmup-steps', type=int, default=80)
     parser.add_argument(
         '--headless',
@@ -64,9 +74,30 @@ def parse_args():
         default=True,
     )
     parser.add_argument(
+        '--semantic-classifier', choices=('qwen-vl', 'clip'), default='qwen-vl',
+        help='qwen-vl: context/target DINO passes + SAM masks + VL labels; clip: legacy single pass.',
+    )
+    parser.add_argument('--qwen-vl-url', default='http://localhost:12185/classify')
+    parser.add_argument('--qwen-vl-timeout', type=float, default=60.0)
+    parser.add_argument('--qwen-vl-max-candidates', type=int, default=12,
+                        help='Maximum distinct proposals classified per perception update.')
+    parser.add_argument(
+        '--label-refinement', action=argparse.BooleanOptionalAction, default=True,
+        help='Legacy CLIP review only; ignored when --semantic-classifier qwen-vl.',
+    )
+    parser.add_argument(
+        '--label-refinement-margin', type=float, default=0.08,
+        help='Minimum CLIP cosine gap between best and second label before correction.',
+    )
+    parser.add_argument(
+        '--label-refinement-min-similarity', type=float, default=0.25,
+        help='Minimum CLIP cosine similarity required for a label correction.',
+    )
+    parser.add_argument(
         '--qwen',
         action=argparse.BooleanOptionalAction,
         default=True,
+        help='Text-only frontier scoring; independent of Qwen-VL object classification.',
     )
     parser.add_argument('--qwen-model', default='Qwen/Qwen3-8B')
     parser.add_argument(
@@ -96,7 +127,22 @@ def parse_args():
         action=argparse.BooleanOptionalAction,
         default=True,
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.portable_root = os.path.abspath(os.path.expanduser(args.portable_root))
+    os.makedirs(args.portable_root, exist_ok=True)
+
+    # Isaac Sim 4.2 reads sys.argv itself. Argparse defaults alone do not
+    # reach Kit, which otherwise writes PhysX caches into the shared install.
+    # Normalize both --portable-root PATH and --portable-root=PATH forms.
+    kit_args = []
+    remaining_args = iter(sys.argv[1:])
+    for argument in remaining_args:
+        if argument == '--portable-root':
+            next(remaining_args)
+        elif not argument.startswith('--portable-root='):
+            kit_args.append(argument)
+    sys.argv[1:] = kit_args + ['--portable-root', args.portable_root]
+    return args
 
 
 def build_semantic_objects(args):
@@ -116,7 +162,7 @@ def build_semantic_objects(args):
     return objects
 
 
-def build_grscene_floor(profile):
+def build_grscene_floor(profile):    
     """Give Go2 a flat collision plane above the scanned mesh floor.
 
     The 0.15 m top surface balances two constraints: low enough that lidar
@@ -148,7 +194,7 @@ def build_grscene_floor(profile):
 
 
 def build_profile(args):
-    if args.scene == 'programmatic':
+    if args.scene == 'programmatic':     
         return programmatic_go2_profile(
             environment_length=args.environment_length,
             environment_width=args.environment_width,
@@ -188,6 +234,14 @@ def main():
             robot_usd_path=args.robot_usd,
             generate_fallback_asset=args.generate_fallback_asset,
             enable_open_vocabulary=args.open_vocabulary,
+            semantic_source=args.semantic_source,
+            semantic_classifier=args.semantic_classifier,
+            qwen_vl_url=args.qwen_vl_url,
+            qwen_vl_timeout=args.qwen_vl_timeout,
+            qwen_vl_max_candidates=args.qwen_vl_max_candidates,
+            label_refinement=args.label_refinement,
+            label_refinement_margin=args.label_refinement_margin,
+            label_refinement_min_similarity=args.label_refinement_min_similarity,
             enable_qwen=args.qwen,
             qwen_model=args.qwen_model,
             qwen_python=args.qwen_python,
