@@ -117,6 +117,7 @@ class Go2SemanticExplorationRunConfig:
     qwen_vl_url: str = 'http://localhost:12185/classify'
     qwen_vl_timeout: float = 60.0
     qwen_vl_max_candidates: int = 12
+    enable_target_cues: bool = True
     enable_qwen: bool = True
     qwen_model: str = 'Qwen/Qwen3-8B'
     qwen_python: str = os.environ.get('QWEN3_PYTHON', 'python'),
@@ -557,6 +558,7 @@ def run_go2_semantic_exploration(
                 max_lateral_speed=profile.max_lateral_speed,
                 semantic_detection_mode=detection_mode.value,
                 target_semantic_classifier=run.semantic_classifier if perception is not None else 'clip',
+                enable_target_cues=run.enable_target_cues,
                 open_vocabulary_startup_error=perception_startup_error,
             ),
             perception=perception,

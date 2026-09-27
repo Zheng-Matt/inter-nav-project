@@ -54,6 +54,11 @@ class SemanticExplorationConfig:
     topology_update_interval: int = 40
     max_forward_speed: float = 0.80
     max_lateral_speed: float = 0.20
+    enable_target_cues: bool = True
+    target_cue_stale_steps: int = 480
+    target_cue_navigation_steps: int = 1200
+    target_cue_observe_steps: int = 96
+    target_cue_cooldown_steps: int = 800
 
     def __post_init__(self):
         if self.target_semantic_classifier not in ('clip', 'qwen-vl'):
@@ -71,6 +76,10 @@ class SemanticExplorationConfig:
             'target_confirmation_min_label_observations',
             'frontier_selection_interval',
             'topology_update_interval',
+            'target_cue_stale_steps',
+            'target_cue_navigation_steps',
+            'target_cue_observe_steps',
+            'target_cue_cooldown_steps',
         ):
             if getattr(self, name) <= 0:
                 raise ValueError(f'{name} must be positive')
@@ -117,6 +126,17 @@ class SemanticExplorationResult:
         }
 
 
+@dataclass
+class _CueTrack:
+    cue_id: str
+    position: Tuple[float, float, float]
+    confidence: float
+    last_step: int
+    observations: int = 1
+    classified_label: str = 'unknown'
+    cooldown_until: int = -1
+
+
 class SemanticExplorationComponent:
     """Fuse observations, select semantic/frontier goals, and drive point navigation."""
 
@@ -158,6 +178,13 @@ class SemanticExplorationComponent:
         self._target_lexical = False
         self._rejected_embedding_targets = set()
         self._trajectory = []
+        self._cue_tracks = []
+        self._next_cue_id = 0
+        self.target_cue: Optional[_CueTrack] = None
+        self._cue_started_step = None
+        self._cue_observe_step = None
+        self._cue_goal = None
+        self.cue_history = []
         self._sync_runtime_state()
 
     @staticmethod
@@ -168,6 +195,8 @@ class SemanticExplorationComponent:
     def state(self) -> str:
         if self.target_node is not None:
             return 'navigate_to_semantic_target'
+        if self.target_cue is not None:
+            return 'observe_target_cue' if self._cue_observe_step is not None else 'navigate_to_target_cue'
         if self.last_decision is None:
             return 'initialize_exploration'
         return f'explore_{self.last_decision.mode.value}'
@@ -215,6 +244,7 @@ class SemanticExplorationComponent:
         self.mapping.update(step, robot_observation)
         position = _position(robot_observation)
         self._trajectory.append(position)
+        self._collect_target_cues(step)
         if self.target_node is None:
             self.target_node = self._best_target_node()
         else:
@@ -263,6 +293,8 @@ class SemanticExplorationComponent:
             self.current_frontier_id = None
             self._last_selection_step = step - self.config.frontier_selection_interval
         if self.target_node is not None:
+            if self.target_cue is not None:
+                self._finish_target_cue(step, 'semantic_target_selected', cooldown=False)
             if self.target_navigation_position is None:
                 self.target_navigation_position = self._target_approach_position(
                     self.target_node,
@@ -270,6 +302,10 @@ class SemanticExplorationComponent:
                 )
             self.current_goal = self.target_navigation_position
             self.current_frontier_id = None
+            self._sync_runtime_state()
+            return
+
+        if self._update_target_cue(step, position):
             self._sync_runtime_state()
             return
 
@@ -335,6 +371,14 @@ class SemanticExplorationComponent:
         self._sync_runtime_state()
 
     def action(self, step: int, robot_observation: dict) -> dict:
+        if self.target_cue is not None and self._cue_observe_step is not None:
+            # Face the candidate while normal camera updates collect evidence.
+            position = _position(robot_observation)
+            delta = np.asarray(self.target_cue.position[:2]) - np.asarray(position[:2])
+            w, x, y, z = robot_observation.get('orientation', (1.0, 0.0, 0.0, 0.0))
+            yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+            error = (np.arctan2(delta[1], delta[0]) - yaw + np.pi) % (2 * np.pi) - np.pi
+            return {'move_by_speed': [0.0, 0.0, float(np.clip(error, -0.35, 0.35))]}
         if self.current_goal is None:
             # A slow in-place scan exposes new RGB/LiDAR evidence before a
             # frontier exists and is also the safe fallback after plan failure.
@@ -432,6 +476,8 @@ class SemanticExplorationComponent:
                 'frontier_failures': dict(self.planner.failure_counts),
                 'frontier_blacklist': sorted(self.planner.blacklist),
                 'trajectory_points': len(self._trajectory),
+                'target_cue_id': None if self.target_cue is None else self.target_cue.cue_id,
+                'target_cue_transitions': len(self.cue_history),
             }
         )
         return stats
@@ -448,6 +494,7 @@ class SemanticExplorationComponent:
             'statistics': self.statistics(),
             'decisions': self.decision_history,
             'trajectory': [list(point) for point in self._trajectory],
+            'target_cue_history': self.cue_history,
         }
         with metadata_path.open('w', encoding='utf-8') as output_file:
             json.dump(payload, output_file, indent=2)
@@ -535,7 +582,10 @@ class SemanticExplorationComponent:
         return self._target_embedding
 
     def _target_approach_position(self, node: SceneGraphNode, robot_position):
-        target = np.asarray(node.position[:2], dtype=np.float64)
+        return self._approach_position(node.position, robot_position)
+
+    def _approach_position(self, target_position, robot_position):
+        target = np.asarray(target_position[:2], dtype=np.float64)
         robot = np.asarray(robot_position[:2], dtype=np.float64)
         direction = robot - target
         norm = float(np.linalg.norm(direction))
@@ -577,6 +627,104 @@ class SemanticExplorationComponent:
                 )
                 desired = np.asarray(occupancy.cell_to_world(best), dtype=np.float64)
         return (float(desired[0]), float(desired[1]), float(robot_position[2]))
+
+    def _collect_target_cues(self, step):
+        if not self.config.enable_target_cues or self.config.target_semantic_classifier != 'qwen-vl':
+            return
+        # A frame can remain available between camera ticks: consume its capture
+        # step only once per spatial track, never as new semantic evidence.
+        if getattr(self.perception, 'last_query_status', None) != 'ok':
+            return
+        self._cue_tracks = [
+            track for track in self._cue_tracks
+            if track is self.target_cue or step <= max(
+                track.last_step + self.config.target_cue_stale_steps, track.cooldown_until,
+            )
+        ]
+        for cue in sorted(getattr(self.perception, 'last_target_cues', ()),
+                          key=lambda item: item.confidence, reverse=True):
+            if (canonical_semantic_label(cue.target_query) != canonical_semantic_label(self.config.target_query)
+                    or cue.step > step or step - cue.step > self.config.target_cue_stale_steps
+                    or not np.isfinite(cue.position).all()
+                    or self.mapping.map.occupancy.world_to_cell(cue.position[:2]) is None):
+                continue
+            nearby = [track for track in self._cue_tracks if _distance_xy(track.position, cue.position) <= 0.75]
+            track = min(nearby, key=lambda item: _distance_xy(item.position, cue.position), default=None)
+            if track is None:
+                self._next_cue_id += 1
+                self._cue_tracks.append(_CueTrack(
+                    f'cue:{self._next_cue_id}', tuple(cue.position), cue.confidence,
+                    cue.step, classified_label=cue.classified_label,
+                ))
+            elif cue.step > track.last_step:
+                track.position = tuple(float(value) for value in (
+                    np.asarray(track.position) * 0.75 + np.asarray(cue.position) * 0.25
+                ))
+                track.confidence = cue.confidence
+                track.last_step = cue.step
+                track.classified_label = cue.classified_label
+                # Cooldown observations cannot preload a new navigation lock.
+                if cue.step >= track.cooldown_until:
+                    track.observations += 1
+
+    def _finish_target_cue(self, step, reason, cooldown=True):
+        cue = self.target_cue
+        if cue is None:
+            return
+        self.cue_history.append({'step': step, 'event': 'released', 'cue_id': cue.cue_id, 'reason': reason})
+        if cooldown:
+            cue.cooldown_until = step + self.config.target_cue_cooldown_steps
+            cue.observations = 0
+        self.target_cue = None
+        self._cue_started_step = self._cue_observe_step = self._cue_goal = None
+        self.current_goal = None
+        self.current_frontier_id = None
+        self._last_selection_step = step - self.config.frontier_selection_interval
+
+    def _update_target_cue(self, step, position):
+        if self.target_cue is not None:
+            reason = None
+            if step - self.target_cue.last_step > self.config.target_cue_stale_steps:
+                reason = 'stale'
+            elif self._cue_observe_step is not None:
+                if step - self._cue_observe_step >= self.config.target_cue_observe_steps:
+                    reason = 'unconfirmed_after_observation'
+            elif step - self._cue_started_step >= self.config.target_cue_navigation_steps:
+                reason = 'navigation_timeout'
+            if reason is not None:
+                self._finish_target_cue(step, reason)
+                # Give exploration a turn before considering another candidate.
+                return False
+        if self.target_cue is None:
+            candidates = [track for track in self._cue_tracks
+                          if track.observations >= self.config.target_min_observations
+                          and step >= track.cooldown_until
+                          and step - track.last_step <= self.config.target_cue_stale_steps]
+            if not candidates:
+                return False
+            cue = max(candidates, key=lambda item: (
+                item.observations, item.confidence, -_distance_xy(position, item.position),
+            ))
+            goal = self._approach_position(cue.position, position)
+            occupancy = self.mapping.map.occupancy
+            cell = occupancy.world_to_cell(goal[:2])
+            if cell is None or not occupancy.observed[cell] or occupancy.inflated_mask()[cell]:
+                cue.cooldown_until = step + self.config.target_cue_cooldown_steps
+                cue.observations = 0
+                return False
+            self.target_cue = cue
+            self._cue_started_step, self._cue_goal = step, goal
+            self.current_frontier_id = None
+            self.cue_history.append({
+                'step': step, 'event': 'selected', 'cue_id': cue.cue_id,
+                'position': list(cue.position), 'classified_label': cue.classified_label,
+            })
+        self.current_goal = self._cue_goal
+        if (self._cue_observe_step is None
+                and _distance_xy(position, self._cue_goal) <= self.config.target_distance):
+            self._cue_observe_step = step
+            self.cue_history.append({'step': step, 'event': 'observing', 'cue_id': self.target_cue.cue_id})
+        return True
 
     def _sync_runtime_state(self):
         self.mapping.exploration_state = self.state

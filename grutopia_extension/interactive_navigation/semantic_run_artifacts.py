@@ -48,6 +48,7 @@ class SemanticRunArtifacts:
         'step', 'x_m', 'y_m', 'z_m', 'yaw_rad', 'state', 'goal_kind', 'goal_x_m', 'goal_y_m',
         'goal_distance_m', 'target_node_id', 'target_confirmed',
         'target_label_support', 'target_total_support', 'target_repeated_label_support',
+        'target_cue_id',
     )
 
     def __init__(self, record_dir: str, run, profile):
@@ -89,6 +90,7 @@ class SemanticRunArtifacts:
         self._previous_node = None
         self._previous_confirmed = False
         self._previous_goal = None
+        self._cue_event_count = 0
         self._plan_count = 0
         self._planning_failures = 0
         self._voronoi_fallbacks = 0
@@ -118,6 +120,7 @@ class SemanticRunArtifacts:
             w, x, y, z = (float(value) for value in orientation)
             yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
         node = component.target_node
+        cue = getattr(component, 'target_cue', None)
         goal = component.current_goal
         matching, total, repeated = (0, 0, 0) if node is None else component._node_label_evidence(node)
         return {
@@ -130,12 +133,20 @@ class SemanticRunArtifacts:
             'total': total,
             'repeated': repeated,
             'goal': None if goal is None else tuple(float(value) for value in goal[:3]),
-            'goal_kind': 'target' if node is not None else ('frontier' if goal is not None else 'none'),
+            'goal_kind': ('target' if node is not None else 'target_cue' if cue is not None
+                          else 'frontier' if goal is not None else 'none'),
+            'cue_id': None if cue is None else cue.cue_id,
             'state': component.state,
         }
 
     def observe(self, step: int, component, observation, *, sample=False, heartbeat=False):
         state = self._snapshot(component, observation)
+        cue_history = getattr(component, 'cue_history', ())
+        for transition in cue_history[self._cue_event_count:]:
+            self._emit(transition['step'], 'target_cue_' + transition['event'], **{
+                key: value for key, value in transition.items() if key not in ('step', 'event')
+            })
+        self._cue_event_count = len(cue_history)
         node = state['node_id']
         target_fields = {
             'node_id': node,
@@ -186,6 +197,7 @@ class SemanticRunArtifacts:
                 'position': state['position'],
                 'target_node_id': node,
                 'target_confirmed': state['confirmed'],
+                'target_cue_id': state['cue_id'],
             })
 
     def _write_trace(self, step, state):
@@ -206,6 +218,7 @@ class SemanticRunArtifacts:
             'target_label_support': state['matching'],
             'target_total_support': state['total'],
             'target_repeated_label_support': state['repeated'],
+            'target_cue_id': state['cue_id'],
         })
         self._trace_file.flush()
         self._last_trace_step = step

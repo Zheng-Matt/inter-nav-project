@@ -42,6 +42,25 @@ class _Component:
 
 
 class SemanticRunArtifactsTest(unittest.TestCase):
+    def test_cue_records_remain_separate_from_confirmed_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            recorder = SemanticRunArtifacts(directory, _Run(), _Profile())
+            component = _Component()
+            component.target_cue = SimpleNamespace(cue_id='cue:1')
+            component.current_goal = (3, 0, .5)
+            component.cue_history = [{'step': 24, 'event': 'selected', 'cue_id': 'cue:1'}]
+            recorder.observe(24, component, {'position': (0, 0, .5)}, sample=True, heartbeat=True)
+            recorder.observe(25, component, {'position': (0, 0, .5)})
+            recorder.finish(None, None, None)
+            root = Path(directory)
+            events = [json.loads(line) for line in (root / 'events.jsonl').read_text().splitlines()]
+            self.assertEqual([e['event'] for e in events], ['target_cue_selected', 'goal_changed'])
+            with (root / 'trace.csv').open(newline='') as file:
+                row = list(csv.DictReader(file))[0]
+            self.assertEqual((row['goal_kind'], row['target_cue_id'], row['target_node_id']), ('target_cue', 'cue:1', ''))
+            self.assertEqual(row['target_label_support'], '0')
+            self.assertEqual(row['target_confirmed'], 'False')
+
     def test_existing_run_is_not_overwritten(self):
         with tempfile.TemporaryDirectory() as directory:
             (Path(directory) / 'run_summary.json').write_text('{"status":"succeeded"}')

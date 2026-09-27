@@ -562,6 +562,13 @@ class InteractionVideoRecorder:
         robot_pixel = self._world_to_pixel(interaction_observation.robot_position[:2], fused_map)
         cv2.circle(frame, robot_pixel, 11, (20, 230, 20), -1)
         target_node = getattr(target_context, 'target_node', None)
+        target_cue = getattr(target_context, 'target_cue', None)
+        if target_node is None and target_cue is not None:
+            cue_pixel = self._world_to_pixel(target_cue.position[:2], fused_map)
+            cv2.drawMarker(frame, cue_pixel, (255, 80, 210), cv2.MARKER_DIAMOND, 23, 2, cv2.LINE_AA)
+            query = getattr(target_context.config, 'target_query', '')
+            self._put_label(frame, f'CUE: {query}',
+                            (cue_pixel[0] + 12, cue_pixel[1] - 8), (255, 80, 210), label_boxes)
         if target_node is not None:
             query = getattr(getattr(target_context, 'config', None), 'target_query', target_node.label)
             target_pixel = self._world_to_pixel(target_node.position[:2], fused_map)

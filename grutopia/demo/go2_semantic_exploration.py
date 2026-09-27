@@ -83,6 +83,8 @@ def parse_args():
     parser.add_argument('--qwen-vl-url', default='http://localhost:12185/classify')
     parser.add_argument('--qwen-vl-timeout', type=float, default=60.0)
     parser.add_argument('--qwen-vl-max-candidates', type=int, default=12)
+    parser.add_argument('--target-cues', action=argparse.BooleanOptionalAction, default=True,
+                        help='Use DINO target proposals to approach and observe; never count them as class votes.')
     parser.add_argument(
         '--qwen',
         action=argparse.BooleanOptionalAction,
@@ -220,6 +222,7 @@ def main():
             qwen_vl_url=args.qwen_vl_url,
             qwen_vl_timeout=args.qwen_vl_timeout,
             qwen_vl_max_candidates=args.qwen_vl_max_candidates,
+            enable_target_cues=args.target_cues,
             enable_qwen=args.qwen,
             qwen_model=args.qwen_model,
             qwen_python=args.qwen_python,

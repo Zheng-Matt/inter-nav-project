@@ -16,6 +16,18 @@ from grutopia_extension.interactive_navigation.mapping import SemanticDetection
 
 BBox = Tuple[float, float, float, float]
 
+
+@dataclass(frozen=True)
+class TargetObservationCue:
+    """A DINO search proposal with geometry, never a semantic class vote."""
+
+    target_query: str
+    raw_label: str
+    classified_label: str
+    position: Tuple[float, float, float]
+    confidence: float
+    step: int
+
 # Normalize exact aliases; do not equate monitor with television.
 LABEL_ALIASES = {
     'couch': 'sofa',
@@ -279,6 +291,7 @@ class OpenVocabularyPerception:
         self._clip_device: Optional[str] = None
         self.last_item_errors: list[dict] = []
         self.last_query_status = 'idle'
+        self.last_target_cues: list[TargetObservationCue] = []
         # One small, JSON-serializable record for the camera frame most
         # recently sent to GroundingDINO. Never reuse it for a later step.
         self.last_debug_frame: Optional[dict] = None
@@ -351,6 +364,7 @@ class OpenVocabularyPerception:
     ) -> list[Any]:
         self.last_item_errors = []
         self.last_debug_frame = None
+        self.last_target_cues = []
         rgb, depth_array, points = self._validate_inputs(rgba, depth, point_image)
         query = self.build_query(target, include_context=include_context)
         queries = [('legacy', query)]
@@ -369,6 +383,7 @@ class OpenVocabularyPerception:
             'boxes': [],
             'mapped': [],
             'classified': [],
+            'target_cues': [],
             'item_errors': [],
         }
         self.last_debug_frame = debug_frame
@@ -528,6 +543,7 @@ class OpenVocabularyPerception:
                 world_points = point_image[valid]
                 if len(world_points) < self.config.min_points:
                     continue
+                centroid = tuple(float(v) for v in world_points.mean(axis=0))
                 classification = {}
                 if use_vl:
                     classification = self.classifier.classify(self._qwen_context_crop(image, bbox), categories)
@@ -543,6 +559,19 @@ class OpenVocabularyPerception:
                             'reason': classification.get('reason', 'classified'),
                             'accepted': final_label != 'unknown',
                         })
+                    if proposal_source == 'target':
+                        cue = TargetObservationCue(
+                            target_query=str(target), raw_label=label,
+                            classified_label=final_label, position=centroid,
+                            confidence=float(confidence), step=int(step),
+                        )
+                        self.last_target_cues.append(cue)
+                        if self.last_debug_frame is not None:
+                            self.last_debug_frame['target_cues'].append({
+                                'raw_label': label, 'classified_label': final_label,
+                                'centroid': list(centroid), 'confidence': float(confidence),
+                                'step': int(step),
+                            })
                     if final_label == 'unknown':
                         continue
                     embedding = None
@@ -551,7 +580,7 @@ class OpenVocabularyPerception:
                     final_label = label
                 output.append(OpenVocabularyDetection(
                     label=final_label, confidence=confidence, bbox=bbox, mask=mask, embedding=embedding,
-                    centroid=tuple(float(v) for v in world_points.mean(axis=0)), point_count=len(world_points), step=int(step),
+                    centroid=centroid, point_count=len(world_points), step=int(step),
                     raw_label=label,
                     label_source='qwen-vl' if use_vl else 'grounding-dino',
                     classifier_model=classification.get('model'), classifier_response=classification.get('raw_text'),

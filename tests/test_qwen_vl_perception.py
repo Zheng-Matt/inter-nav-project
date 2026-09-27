@@ -2,7 +2,7 @@
 import unittest
 import numpy as np
 from grutopia_extension.interactive_navigation.mapping import MappingConfig, SceneGraphMap, SemanticDetection
-from grutopia_extension.interactive_navigation.open_vocabulary_perception import OpenVocabularyPerception, OpenVocabularyPerceptionConfig, AgentVLMBackend
+from grutopia_extension.interactive_navigation.open_vocabulary_perception import OpenVocabularyPerception, OpenVocabularyPerceptionConfig, AgentVLMBackend, TargetObservationCue
 from grutopia_extension.interactive_navigation.semantic_exploration_component import SemanticExplorationComponent, SemanticExplorationConfig
 from tests.test_open_vocabulary_perception import _Session
 
@@ -65,6 +65,9 @@ class QwenVLPerceptionTest(unittest.TestCase):
         self.assertEqual(p.last_debug_frame['classified'][0]['label'], 'unknown')
         self.assertFalse(p.last_debug_frame['classified'][0]['accepted'])
         self.assertEqual(p.last_debug_frame['mapped'], [])
+        cue = p.last_target_cues[0]
+        self.assertEqual((cue.target_query, cue.classified_label, cue.position), ('television', 'unknown', (2, 3, 4)))
+        self.assertEqual(p.last_debug_frame['target_cues'][0]['centroid'], [2, 3, 4])
 
     def test_rate_limit_does_not_replay_classifications(self):
         p, classifier, rgb, depth, points = self.make_pipeline()
@@ -72,6 +75,82 @@ class QwenVLPerceptionTest(unittest.TestCase):
         self.assertEqual(p.perceive(rgb, depth, points, 'television', step=2), [])
         self.assertEqual(len(classifier.calls), 1)
         self.assertEqual(p.last_debug_frame['classified'], [])
+        self.assertEqual(p.last_target_cues, [])
+
+    def cue_component(self, target='television', **options):
+        from types import SimpleNamespace
+        perception = SimpleNamespace(last_query_status='ok', last_target_cues=[])
+        component = SemanticExplorationComponent(SemanticExplorationConfig(
+            target_query=target, target_semantic_classifier='qwen-vl',
+            mapping=MappingConfig(x_limits=(0, 6), y_limits=(0, 4),
+                                  grid_resolution=.1, robot_radius=.1), **options,
+        ), perception=perception)
+        component.mapping.map.occupancy.observed[:] = True
+        component.mapping.update = lambda step, observation: None
+        observation = {'position': (1., 1.5, .4), 'orientation': (1., 0., 0., 0.)}
+        def frame(step, label='unknown', position=(3., 1.5, .7)):
+            perception.last_target_cues = [TargetObservationCue(target, 'screen', label, position, .4, step)]
+            component.update(step, observation)
+        return component, perception, observation, frame
+
+    def test_cue_guides_without_class_vote_or_success_and_expires(self):
+        component, p, observation, frame = self.cue_component()
+        frame(0)
+        component.update(1, observation)  # Reusing a capture is not a second observation.
+        self.assertEqual(component._cue_tracks[0].observations, 1)
+        self.assertIsNone(component.target_cue)
+        frame(24)
+        self.assertEqual(component.state, 'navigate_to_target_cue')
+        self.assertIsNone(component.target_node)
+        self.assertFalse(component.target_confirmed)
+        self.assertFalse(component.mapping.map.scene_graph.object_nodes())
+        near = dict(observation, position=component.current_goal)
+        component.update(25, near)
+        self.assertEqual(component.state, 'observe_target_cue')
+        self.assertFalse(component.evaluate(25, near).success)
+        self.assertEqual(component.action(25, near)['move_by_speed'][:2], [0., 0.])
+        component.update(121, near)
+        self.assertIsNone(component.target_cue)
+        self.assertEqual(component.cue_history[-1]['reason'], 'unconfirmed_after_observation')
+        frame(144)
+        self.assertIsNone(component.target_cue)  # Cooldown cannot be bypassed by a new frame.
+        self.assertEqual(component._cue_tracks[0].observations, 0)
+
+    def test_qwen_node_preempts_cue_without_relaxing_confirmation(self):
+        component, _, observation, frame = self.cue_component(target='plant')
+        frame(0)
+        frame(24)
+        for step in (25, 26):
+            component.mapping.map.scene_graph.update_detections([SemanticDetection(
+                'plant', (4, 1.5, .7), confidence=.8, step=step, sources=('qwen_vl',))])
+        component.update(26, observation)
+        self.assertIsNone(component.target_cue)
+        self.assertEqual(component.target_node.label, 'plant')
+        self.assertFalse(component.target_confirmed)
+        for step in range(27, 33):
+            component.mapping.map.scene_graph.update_detections([SemanticDetection(
+                'plant', (4, 1.5, .7), confidence=.8, step=step, sources=('qwen_vl',))])
+        component.update(32, observation)
+        self.assertTrue(component.target_confirmed)
+        self.assertTrue(component.evaluate(32, dict(observation, position=component.current_goal)).success)
+
+    def test_stale_navigation_and_disabled_cues(self):
+        component, _, observation, frame = self.cue_component(target_cue_stale_steps=48)
+        frame(0)
+        frame(24)
+        component.update(73, observation)
+        self.assertIsNone(component.target_cue)
+        self.assertEqual(component.cue_history[-1]['reason'], 'stale')
+        component, _, observation, frame = self.cue_component(target_cue_navigation_steps=48)
+        frame(0)
+        frame(24)
+        frame(72)
+        self.assertIsNone(component.target_cue)
+        self.assertEqual(component.cue_history[-1]['reason'], 'navigation_timeout')
+        component, _, _, frame = self.cue_component(enable_target_cues=False)
+        frame(0)
+        frame(24)
+        self.assertEqual(component._cue_tracks, [])
 
     def test_candidate_budget_prioritizes_target_pass(self):
         p, *_ = self.make_pipeline(qwen_vl_max_candidates=1)
