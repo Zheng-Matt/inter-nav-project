@@ -1,7 +1,8 @@
 """Runtime glue from GRUtopia sensor observations to the fused map."""
 
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
+from enum import Enum
 from math import atan2, cos, pi, sin
 from pathlib import Path
 from typing import Iterable, Optional
@@ -28,6 +29,56 @@ _NON_OBJECT_SEMANTIC_LABELS = {
 }
 
 
+_SEMANTIC_DETECTION_MODE_ALIASES = {
+    'isaac': 'ISAAC',
+    'gt': 'ISAAC',
+    'ground_truth': 'ISAAC',
+    'open_vocab': 'OPEN_VOCABULARY',
+    'open_vocabulary': 'OPEN_VOCABULARY',
+    'openvocab': 'OPEN_VOCABULARY',
+    'hybrid': 'HYBRID',
+    'fused': 'HYBRID',
+}
+
+
+class SemanticDetectionMode(str, Enum):
+    """Which perception source supplies object detections to the fused map.
+
+    ``isaac`` uses only the simulator's semantic bounding boxes, i.e. the
+    ground-truth labels of the scene. ``open_vocab`` uses only the
+    GroundingDINO/MobileSAM detections, which is what a real robot would see.
+    ``hybrid`` fuses both: a scene-graph node keeps every source that agreed
+    on it, and geometry comes from the denser observation.
+    """
+
+    ISAAC = 'isaac'
+    OPEN_VOCABULARY = 'open_vocab'
+    HYBRID = 'hybrid'
+
+    @classmethod
+    def parse(cls, value) -> 'SemanticDetectionMode':
+        """Normalize a CLI string or enum member into a member."""
+
+        if isinstance(value, cls):
+            return value
+        normalized = str(value).strip().casefold().replace('-', '_').replace(' ', '_')
+        try:
+            return cls[_SEMANTIC_DETECTION_MODE_ALIASES[normalized]]
+        except KeyError:
+            supported = ', '.join(mode.value for mode in cls)
+            raise ValueError(
+                f'unknown semantic detection mode {value!r}; expected one of {supported}'
+            ) from None
+
+    @property
+    def uses_isaac(self) -> bool:
+        return self is not SemanticDetectionMode.OPEN_VOCABULARY
+
+    @property
+    def uses_open_vocabulary(self) -> bool:
+        return self is not SemanticDetectionMode.ISAAC
+
+
 class MapNavigationRuntime:
     """Fuse live sensors and replace path commands with A* map plans."""
 
@@ -48,6 +99,9 @@ class MapNavigationRuntime:
         replan_lookahead_distance: Optional[float] = None,
         semantic_target: str = '',
         open_vocabulary_perception=None,
+        semantic_detection_mode=SemanticDetectionMode.HYBRID,
+        open_vocabulary_startup_error: Optional[str] = None,
+        open_vocabulary_failure_limit: int = 3,
         use_semantic_voronoi: bool = False,
         semantic_voronoi_config=None,
         topology_update_interval: int = 40,
@@ -59,6 +113,8 @@ class MapNavigationRuntime:
             raise ValueError('replan_lookahead_distance must be positive when provided')
         if topology_update_interval <= 0:
             raise ValueError('topology_update_interval must be positive')
+        if open_vocabulary_failure_limit <= 0:
+            raise ValueError('open_vocabulary_failure_limit must be positive')
         self.map = FusedMap(mapping_config)
         self.lidar_interval = lidar_interval
         self.rgb_interval = rgb_interval
@@ -74,8 +130,33 @@ class MapNavigationRuntime:
         self.replan_lookahead_distance = replan_lookahead_distance
         self.semantic_target = str(semantic_target).strip()
         self.open_vocabulary_perception = open_vocabulary_perception
+        self.semantic_detection_mode = SemanticDetectionMode.parse(semantic_detection_mode)
+        self.open_vocabulary_startup_error = open_vocabulary_startup_error
+        if (
+            self.semantic_detection_mode is SemanticDetectionMode.OPEN_VOCABULARY
+            and open_vocabulary_perception is None
+        ):
+            # Hybrid degrades to Isaac-only when no perception is configured,
+            # but an explicit open-vocab request must not silently fall back to
+            # ground truth: that would corrupt a detection-quality comparison
+            # with labels only the simulator can provide.
+            raise ValueError(
+                'semantic_detection_mode=open_vocab requires an open_vocabulary_perception'
+            )
         self.open_vocabulary_frames = 0
         self.open_vocabulary_failures = 0
+        self.open_vocabulary_attempts = 0
+        self.open_vocabulary_rate_limited_frames = 0
+        self.open_vocabulary_empty_frames = 0
+        self.open_vocabulary_detections = 0
+        self.open_vocabulary_partial_failures = 0
+        self.open_vocabulary_consecutive_failures = 0
+        self.open_vocabulary_failure_limit = int(open_vocabulary_failure_limit)
+        self.open_vocabulary_last_error = None
+        self.open_vocabulary_last_partial_errors = []
+        self.open_vocabulary_last_labels = []
+        self.open_vocabulary_last_detection_step = None
+        self.open_vocabulary_last_success_step = None
         self.topology_update_interval = int(topology_update_interval)
         self.semantic_voronoi = None
         self.voronoi_planner = None
@@ -105,11 +186,15 @@ class MapNavigationRuntime:
         self._last_lidar_physics_step = -1
         self._planned_state: Optional[InteractionState] = None
         self._planned_path = None
+        self._planned_goal = None
         self._waypoint_index = 0
         self._planned_paths = {}
         self._plan_history = []
         self.planning_failures = 0
         self.replan_count = 0
+        self.replan_reasons = {}
+        self.last_replan = None
+        self._last_path_blockage = None
         self._progress_position = None
         self._progress_step = None
         self._last_plan_step = None
@@ -248,9 +333,21 @@ class MapNavigationRuntime:
                 )
 
     def _camera_semantic_detections(self, camera: dict, point_image, step: int):
-        fallback = tuple(_semantic_detections(camera, point_image))
-        if self.open_vocabulary_perception is None or not self.semantic_target:
-            return fallback
+        mode = self.semantic_detection_mode
+        # Ground truth is dropped entirely in open-vocabulary mode so a
+        # detection-quality run cannot be silently rescued by simulator labels.
+        isaac = (
+            tuple(_semantic_detections(camera, point_image, step=step))
+            if mode.uses_isaac
+            else ()
+        )
+        if (
+            not mode.uses_open_vocabulary
+            or self.open_vocabulary_perception is None
+            or not self.semantic_target
+        ):
+            return isaac
+        self.open_vocabulary_attempts += 1
         try:
             detections = self.open_vocabulary_perception.perceive(
                 rgba=camera.get('rgba'),
@@ -262,19 +359,73 @@ class MapNavigationRuntime:
             semantic_detections = []
             for detection in detections:
                 if isinstance(detection, SemanticDetection):
-                    semantic_detections.append(detection)
+                    semantic_detections.append(
+                        detection
+                        if detection.sources
+                        else replace(detection, sources=('open_vocabulary',))
+                    )
                 elif hasattr(detection, 'to_semantic_detection'):
                     semantic_detections.append(detection.to_semantic_detection())
+            query_status = getattr(
+                self.open_vocabulary_perception,
+                'last_query_status',
+                'ok',
+            )
+            if query_status == 'rate_limited':
+                self.open_vocabulary_rate_limited_frames += 1
+                return isaac
             self.open_vocabulary_frames += 1
-            # Open-vocabulary detections enrich the camera's ground-truth
-            # semantics instead of replacing them: dropping the fallback hid
-            # target classes (e.g. refrigerator) from the scene graph whenever
-            # GroundingDINO returned any context detection, so lexical target
-            # matching could never fire.
-            return tuple(semantic_detections) + fallback
-        except Exception:
+            self.open_vocabulary_consecutive_failures = 0
+            self.open_vocabulary_last_success_step = int(step)
+            item_errors = getattr(
+                self.open_vocabulary_perception,
+                'last_item_errors',
+                (),
+            )
+            self.open_vocabulary_last_partial_errors = list(item_errors)
+            self.open_vocabulary_partial_failures += len(item_errors)
+            self.open_vocabulary_detections += len(semantic_detections)
+            if semantic_detections:
+                self.open_vocabulary_last_labels = sorted(
+                    {detection.label for detection in semantic_detections}
+                )
+                self.open_vocabulary_last_detection_step = int(step)
+            else:
+                self.open_vocabulary_empty_frames += 1
+            # In hybrid mode open-vocabulary detections enrich the camera's
+            # ground-truth semantics instead of replacing them: dropping the
+            # fallback hid target classes (e.g. refrigerator) from the scene
+            # graph whenever GroundingDINO returned any context detection, so
+            # lexical target matching could never fire. In open-vocabulary
+            # mode `isaac` is empty and the same pass just deduplicates the
+            # model's own boxes.
+            return _deduplicate_semantic_detections(
+                tuple(semantic_detections) + isaac
+            )
+        except Exception as error:
             self.open_vocabulary_failures += 1
-            return fallback
+            self.open_vocabulary_consecutive_failures += 1
+            item_errors = list(
+                getattr(self.open_vocabulary_perception, 'last_item_errors', ())
+            )
+            self.open_vocabulary_last_partial_errors = item_errors
+            self.open_vocabulary_partial_failures += len(item_errors)
+            self.open_vocabulary_last_error = {
+                'step': int(step),
+                'type': type(error).__name__,
+                'message': str(error),
+            }
+            if (
+                mode is SemanticDetectionMode.OPEN_VOCABULARY
+                and self.open_vocabulary_consecutive_failures
+                >= self.open_vocabulary_failure_limit
+            ):
+                raise RuntimeError(
+                    'open-vocabulary perception failed '
+                    f'{self.open_vocabulary_consecutive_failures} consecutive frames; '
+                    f'last error: {type(error).__name__}: {error}'
+                ) from error
+            return isaac
 
     def action_for(
         self,
@@ -316,6 +467,7 @@ class MapNavigationRuntime:
             )
             self._planned_state = None
             self._planned_path = None
+            self._planned_goal = None
             self._waypoint_index = 0
             return ControllerCommand(command.name, (recover_target, command.data[1])).as_action()
         if decision.state == InteractionState.PUSH_DOOR and 'move_by_speed' in action:
@@ -328,6 +480,7 @@ class MapNavigationRuntime:
         if command is None or command.name != 'move_along_path':
             self._planned_state = None
             self._planned_path = None
+            self._planned_goal = None
             self._waypoint_index = 0
             self._progress_position = None
             self._progress_step = None
@@ -355,6 +508,7 @@ class MapNavigationRuntime:
                 step,
             )
         goal = tuple(float(value) for value in configured_path[-1])
+        plan_reason = None
         if (
             decision.state == InteractionState.NAVIGATE_TO_OBJECT
             and np.linalg.norm(np.asarray(start[:2]) - np.asarray(goal[:2]))
@@ -366,10 +520,27 @@ class MapNavigationRuntime:
                 tuple(self._aligned_speed_data(0.0, robot_observation['orientation'])),
             ).as_action()
         if self._planned_state != decision.state:
+            plan_reason = 'initial' if self._planned_state is None else 'state_changed'
             self._planned_path = None
+            self._planned_goal = None
             self._progress_position = np.asarray(start[:2])
             self._progress_step = step
             self._last_plan_step = None
+            self._last_blocked_replan_step = None
+        elif (
+            self._planned_path is not None
+            and self._planned_goal is not None
+            and np.linalg.norm(
+                np.asarray(goal[:2], dtype=np.float64)
+                - np.asarray(self._planned_goal[:2], dtype=np.float64)
+            )
+            > self.map.config.grid_resolution * 0.5
+        ):
+            self._record_replan('goal_changed', step, start)
+            self._progress_position = np.asarray(start[:2])
+            self._progress_step = step
+            self._last_blocked_replan_step = None
+            plan_reason = 'goal_changed'
         elif (
             step is not None
             and self.replan_only_if_blocked
@@ -385,9 +556,8 @@ class MapNavigationRuntime:
             # waiting for the periodic replan timer gave a blind window of
             # ~0.5 m at walking speed and led to a near-collision pass.
             self._last_blocked_replan_step = step
-            self._planned_path = None
-            self._waypoint_index = 0
-            self.replan_count += 1
+            self._record_replan('blocked', step, start)
+            plan_reason = 'blocked'
         elif (
             step is not None
             and self.replan_interval_steps is not None
@@ -397,15 +567,13 @@ class MapNavigationRuntime:
             if self.replan_only_if_blocked and not self._remaining_path_blocked(start):
                 self._last_plan_step = step
             else:
-                self._planned_path = None
-                self._waypoint_index = 0
-                self.replan_count += 1
+                plan_reason = 'periodic_blocked' if self.replan_only_if_blocked else 'periodic'
+                self._record_replan(plan_reason, step, start)
         elif step is not None and self._progress_step is not None and step - self._progress_step >= 240:
             current_position = np.asarray(start[:2])
             if np.linalg.norm(current_position - self._progress_position) < 0.12:
-                self._planned_path = None
-                self._waypoint_index = 0
-                self.replan_count += 1
+                self._record_replan('stalled', step, start)
+                plan_reason = 'stalled'
             self._progress_position = current_position
             self._progress_step = step
 
@@ -428,6 +596,7 @@ class MapNavigationRuntime:
                 self.planning_failures += 1
                 return ControllerCommand('move_by_speed', (0.0, 0.0, 0.0)).as_action()
             self._planned_state = decision.state
+            self._planned_goal = goal
             self._waypoint_index = 0
             self._last_plan_step = step
             self._planned_paths[decision.state.value] = self._planned_path
@@ -435,6 +604,8 @@ class MapNavigationRuntime:
                 {
                     'step': step,
                     'state': decision.state.value,
+                    'reason': plan_reason or 'initial',
+                    'goal': list(goal),
                     'path': [list(point) for point in self._planned_path],
                 }
             )
@@ -455,6 +626,7 @@ class MapNavigationRuntime:
         if self._planned_state != state or self._planned_path != path:
             self._planned_state = state
             self._planned_path = path
+            self._planned_goal = path[-1]
             self._waypoint_index = 0
             self._last_plan_step = step
             self._planned_paths[state.value] = path
@@ -482,8 +654,11 @@ class MapNavigationRuntime:
 
     def _remaining_path_blocked(self, start) -> bool:
         if not self._planned_path:
+            self._last_path_blockage = {'reason': 'missing_path'}
             return True
         blocked = self.map.occupancy.inflated_mask()
+        start_cell = self.map.occupancy.world_to_cell(start[:2])
+        start_blocked = start_cell is None or bool(blocked[start_cell])
         points = [np.asarray(start[:2], dtype=np.float64)]
         points.extend(
             np.asarray(point[:2], dtype=np.float64)
@@ -491,22 +666,50 @@ class MapNavigationRuntime:
         )
         spacing = self.map.config.grid_resolution * 0.5
         remaining = self.replan_lookahead_distance
-        for left, right in zip(points, points[1:]):
+        checked_total = 0.0
+        self._last_path_blockage = None
+        for segment_index, (left, right) in enumerate(zip(points, points[1:])):
             distance = float(np.linalg.norm(right - left))
             checked_distance = distance if remaining is None else min(distance, remaining)
             if checked_distance <= 0:
-                return False
+                continue
             endpoint = left if distance == 0 else left + (right - left) * (checked_distance / distance)
             samples = max(1, int(np.ceil(checked_distance / spacing)))
             for ratio in np.linspace(0.0, 1.0, samples + 1)[1:]:
                 cell = self.map.occupancy.world_to_cell(left + (endpoint - left) * ratio)
                 if cell is None or blocked[cell]:
+                    self._last_path_blockage = {
+                        'reason': 'outside_map' if cell is None else 'inflated_occupancy',
+                        'segment_index': segment_index,
+                        'cell': None if cell is None else list(cell),
+                        'distance_along_path': checked_total + checked_distance * float(ratio),
+                        'start_cell_blocked': start_blocked,
+                    }
                     return True
+            checked_total += checked_distance
             if remaining is not None:
                 remaining -= checked_distance
                 if remaining <= 0:
                     return False
         return False
+
+    def _record_replan(self, reason: str, step: Optional[int], start):
+        previous_goal = self._planned_goal
+        previous_waypoint_index = self._waypoint_index
+        self._planned_path = None
+        self._planned_goal = None
+        self._waypoint_index = 0
+        self.replan_count += 1
+        self.replan_reasons[reason] = self.replan_reasons.get(reason, 0) + 1
+        self.last_replan = {
+            'step': step,
+            'reason': reason,
+            'position': list(start),
+            'previous_goal': None if previous_goal is None else list(previous_goal),
+            'previous_waypoint_index': previous_waypoint_index,
+            'map_revision': self.map.occupancy.revision,
+            'blockage': self._last_path_blockage if 'blocked' in reason else None,
+        }
 
     def velocity_action_for(
         self,
@@ -830,6 +1033,8 @@ class MapNavigationRuntime:
             {
                 'planning_failures': self.planning_failures,
                 'replans': self.replan_count,
+                'replan_reasons': dict(sorted(self.replan_reasons.items())),
+                'last_replan': self.last_replan,
                 'planned_states': sorted(self._planned_paths),
                 'planned_waypoints': {
                     state: len(path) for state, path in sorted(self._planned_paths.items())
@@ -846,8 +1051,28 @@ class MapNavigationRuntime:
                 'trajectory_static_obstacle_violations': self._static_obstacle_violations,
                 'violated_static_obstacle_labels': sorted(self._violated_static_labels),
                 'semantic_target': self.semantic_target,
+                'semantic_detection_mode': self.semantic_detection_mode.value,
+                'semantic_detection_effective_mode': (
+                    SemanticDetectionMode.ISAAC.value
+                    if self.semantic_detection_mode is SemanticDetectionMode.HYBRID
+                    and self.open_vocabulary_perception is None
+                    else self.semantic_detection_mode.value
+                ),
+                'open_vocabulary_available': self.open_vocabulary_perception is not None,
+                'open_vocabulary_startup_error': self.open_vocabulary_startup_error,
+                'open_vocabulary_attempts': self.open_vocabulary_attempts,
                 'open_vocabulary_frames': self.open_vocabulary_frames,
                 'open_vocabulary_failures': self.open_vocabulary_failures,
+                'open_vocabulary_rate_limited_frames': self.open_vocabulary_rate_limited_frames,
+                'open_vocabulary_empty_frames': self.open_vocabulary_empty_frames,
+                'open_vocabulary_detections': self.open_vocabulary_detections,
+                'open_vocabulary_partial_failures': self.open_vocabulary_partial_failures,
+                'open_vocabulary_consecutive_failures': self.open_vocabulary_consecutive_failures,
+                'open_vocabulary_last_error': self.open_vocabulary_last_error,
+                'open_vocabulary_last_partial_errors': self.open_vocabulary_last_partial_errors,
+                'open_vocabulary_last_labels': self.open_vocabulary_last_labels,
+                'open_vocabulary_last_detection_step': self.open_vocabulary_last_detection_step,
+                'open_vocabulary_last_success_step': self.open_vocabulary_last_success_step,
                 'voronoi_plans': self.voronoi_plan_count,
                 'voronoi_plan_fallbacks': self.voronoi_plan_fallbacks,
             }
@@ -904,6 +1129,10 @@ class MapNavigationRuntime:
             payload['scene_graph'] = {
                 'nodes': [asdict(node) for node in graph.nodes],
                 'edges': [asdict(edge) for edge in graph.edges],
+                'label_counts': {
+                    node.node_id: self.map.scene_graph.label_counts(node.node_id)
+                    for node in graph.nodes if node.kind == 'object'
+                },
             }
         if self.semantic_voronoi is not None:
             payload['semantic_voronoi'] = self.semantic_voronoi.to_dict()
@@ -944,7 +1173,7 @@ def _camera_cloud(camera: dict):
     return points, colors, point_image
 
 
-def _semantic_detections(camera: dict, point_image) -> list:
+def _semantic_detections(camera: dict, point_image, step: int = 0) -> list:
     if point_image is None:
         return []
     bounding_boxes = camera.get('bounding_box_2d_tight')
@@ -987,9 +1216,66 @@ def _semantic_detections(camera: dict, point_image) -> list:
                 label=str(label),
                 position=tuple(float(value) for value in position),
                 color=tuple(int(value) for value in np.clip(color, 0, 255)),
+                step=int(step),
+                sources=('isaac',),
             )
         )
     return detections
+
+
+def _deduplicate_semantic_detections(detections) -> tuple:
+    """Fuse duplicate observations produced by multiple sources in one frame."""
+
+    merged = []
+    for detection in detections:
+        match_index = None
+        incoming_embedding = detection.embedding
+        for index, candidate in enumerate(merged):
+            distance = float(
+                np.linalg.norm(
+                    np.asarray(candidate.position[:2], dtype=np.float64)
+                    - np.asarray(detection.position[:2], dtype=np.float64)
+                )
+            )
+            if distance >= 0.75:
+                continue
+            same_label = candidate.label.strip().casefold() == detection.label.strip().casefold()
+            similar_embedding = False
+            if candidate.embedding is not None and incoming_embedding is not None:
+                left = np.asarray(candidate.embedding, dtype=np.float64)
+                right = np.asarray(incoming_embedding, dtype=np.float64)
+                if left.shape == right.shape and left.size:
+                    denominator = float(np.linalg.norm(left) * np.linalg.norm(right))
+                    similar_embedding = denominator > 1e-12 and float(np.dot(left, right) / denominator) >= 0.86
+            if same_label or similar_embedding:
+                match_index = index
+                break
+        if match_index is None:
+            merged.append(detection)
+            continue
+
+        previous = merged[match_index]
+        # Prefer the geometrically denser observation, while retaining
+        # complementary appearance information from either source.
+        geometry = detection if detection.point_count > previous.point_count else previous
+        appearance = detection if detection.embedding is not None else previous
+        color_source = detection if detection.color is not None else previous
+        label_source = detection if detection.confidence > previous.confidence else previous
+        merged[match_index] = SemanticDetection(
+            label=label_source.label,
+            position=geometry.position,
+            color=color_source.color,
+            confidence=max(float(previous.confidence), float(detection.confidence)),
+            embedding=appearance.embedding,
+            point_count=max(int(previous.point_count), int(detection.point_count)),
+            step=max(int(previous.step), int(detection.step)),
+            sources=tuple(dict.fromkeys((*previous.sources, *detection.sources))),
+            label_evidence=tuple(dict.fromkeys((
+                *(previous.label_evidence or (previous.label,)),
+                *(detection.label_evidence or (detection.label,)),
+            ))),
+        )
+    return tuple(merged)
 
 
 def _semantic_category(label) -> str:
@@ -1017,3 +1303,9 @@ def _vector3(value):
 def _yaw(quaternion) -> float:
     w, x, y, z = np.asarray(quaternion, dtype=np.float64).reshape(4)
     return atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+
+
+__all__ = [
+    'MapNavigationRuntime',
+    'SemanticDetectionMode',
+]

@@ -3,6 +3,7 @@
 import argparse
 import os
 import sys
+from datetime import datetime
 
 from grutopia.core.util import has_display
 from grutopia.demo.go2_point_navigation import build_objects
@@ -19,6 +20,10 @@ from grutopia_extension.interactive_navigation.go2_navigation_runner import (
     Go2SemanticExplorationRunConfig,
     run_go2_semantic_exploration,
 )
+from grutopia_extension.interactive_navigation.mapping_runtime import (
+    SemanticDetectionMode,
+)
+from grutopia_extension.interactive_navigation.output_paths import resolve_map_output
 from grutopia_extension.interactive_navigation.point_navigation_profiles import (
     load_point_navigation_profile,
     programmatic_go2_profile,
@@ -52,6 +57,11 @@ def parse_args():
     parser.add_argument('--perception-gpu', type=int, default=5)
     parser.add_argument('--qwen-device', default='cuda:4')
     parser.add_argument('--max-steps', type=int, default=12000)
+    parser.add_argument(
+        '--verify-voronoi-incremental',
+        action='store_true',
+        help='smoke test: compare each successful seam splice with a full skeleton rebuild',
+    )
     parser.add_argument('--mapping-warmup-steps', type=int, default=80)
     parser.add_argument(
         '--headless',
@@ -59,10 +69,22 @@ def parse_args():
         default=not has_display(),
     )
     parser.add_argument(
-        '--open-vocabulary',
-        action=argparse.BooleanOptionalAction,
-        default=True,
+        '--detection-mode',
+        choices=tuple(mode.value for mode in SemanticDetectionMode),
+        default=SemanticDetectionMode.OPEN_VOCABULARY.value,
+        help=(
+            'isaac: simulator ground-truth semantic labels only; '
+            'open_vocab: GroundingDINO + MobileSAM detections only; '
+            'hybrid: fuse both'
+        ),
     )
+    parser.add_argument('--semantic-classifier', choices=('qwen-vl', 'clip'), default='qwen-vl',
+                        help='Qwen-VL classifies marked RGB crops; CLIP retains the legacy path.')
+    parser.add_argument('--qwen-vl-url', default='http://localhost:12185/classify')
+    parser.add_argument('--qwen-vl-timeout', type=float, default=60.0)
+    parser.add_argument('--qwen-vl-max-candidates', type=int, default=12)
+    parser.add_argument('--target-cues', action=argparse.BooleanOptionalAction, default=True,
+                        help='Use DINO target proposals to approach and observe; never count them as class votes.')
     parser.add_argument(
         '--qwen',
         action=argparse.BooleanOptionalAction,
@@ -75,11 +97,13 @@ def parse_args():
     )
     parser.add_argument(
         '--map-output',
-        default='grutopia/results/go2_semantic_exploration/final_map',
+        default=None,
+        help='map prefix; defaults to <record-dir>/final_map',
     )
     parser.add_argument(
         '--record-dir',
-        default='grutopia/results/go2_semantic_exploration',
+        default=None,
+        help='output directory; defaults to a new timestamped directory',
     )
     parser.add_argument('--record-every', type=int, default=20)
     parser.add_argument('--video-fps', type=float, default=12.0)
@@ -167,6 +191,12 @@ def build_profile(args):
 
 def main():
     args = parse_args()
+    record_dir = (
+        args.record_dir if args.record_dir is not None
+        else 'grutopia/results/go2_semantic_exploration_'
+        + datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+    )
+    map_output = resolve_map_output(record_dir, args.map_output)
     profile = build_profile(args)
     objects = build_grscene_floor(profile) if args.scene == 'grscene' else build_semantic_objects(args)
     return run_go2_semantic_exploration(
@@ -180,19 +210,25 @@ def main():
             headless=args.headless,
             max_steps=args.max_steps,
             mapping_warmup_steps=args.mapping_warmup_steps,
-            record_dir=args.record_dir,
+            record_dir=record_dir,
             record_every=args.record_every,
             video_fps=args.video_fps,
-            map_output=args.map_output,
+            map_output=map_output,
             policy_path=args.policy_path,
             robot_usd_path=args.robot_usd,
             generate_fallback_asset=args.generate_fallback_asset,
-            enable_open_vocabulary=args.open_vocabulary,
+            semantic_detection_mode=args.detection_mode,
+            semantic_classifier=args.semantic_classifier,
+            qwen_vl_url=args.qwen_vl_url,
+            qwen_vl_timeout=args.qwen_vl_timeout,
+            qwen_vl_max_candidates=args.qwen_vl_max_candidates,
+            enable_target_cues=args.target_cues,
             enable_qwen=args.qwen,
             qwen_model=args.qwen_model,
             qwen_python=args.qwen_python,
             rendering_interval=args.rendering_interval,
             use_fabric=args.use_fabric,
+            verify_voronoi_incremental=args.verify_voronoi_incremental,
         ),
         objects=objects,
     )

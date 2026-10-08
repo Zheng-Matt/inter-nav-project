@@ -12,6 +12,7 @@ from collections import deque
 from dataclasses import asdict, dataclass, field
 from heapq import heappop, heappush
 from math import ceil, hypot
+from time import perf_counter
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
@@ -24,6 +25,7 @@ from grutopia_extension.interactive_navigation.mapping import (
 )
 
 GridCell = Tuple[int, int]
+GridWindow = Tuple[int, int, int, int]
 
 try:
     from scipy import ndimage as _ndimage
@@ -41,6 +43,7 @@ class SemanticVoronoiConfig:
     spur_length: float = 0.30
     frontier_min_size: int = 1
     incremental: bool = True
+    verify_incremental: bool = False  # expensive full-rebuild oracle for smoke tests
     incremental_margin_cells: int = 4
     incremental_guard_cells: int = 3
     incremental_max_window_fraction: float = 0.75
@@ -142,10 +145,37 @@ class SemanticVoronoiSnapshot:
 class _MutableStatistics:
     builds: int = 0
     cache_hits: int = 0
+    unchanged_updates: int = 0
     incremental_updates: int = 0
     incremental_fallbacks: int = 0
+    incremental_fallback_reasons: Dict[str, int] = field(default_factory=dict)
     last_changed_cells: int = 0
+    last_traversable_changed_cells: int = 0
+    last_observed_changed_cells: int = 0
+    last_changed_components: int = 0
+    last_window_count: int = 0
     last_window_cells: int = 0
+    last_window_work_cells: int = 0
+    last_seam_band_cells: int = 0
+    last_window_fraction: float = 0.0
+    last_window_work_fraction: float = 0.0
+    last_window_to_changed_ratio: float = 0.0
+    last_incremental_fallback_reason: Optional[str] = None
+    incremental_window_evaluations: int = 0
+    incremental_changed_cells_total: int = 0
+    incremental_window_cells_total: int = 0
+    incremental_window_work_cells_total: int = 0
+    incremental_seconds: float = 0.0
+    full_build_seconds: float = 0.0
+    verification_seconds: float = 0.0
+    incremental_max_window_count: int = 0
+    incremental_max_window_fraction: float = 0.0
+    incremental_seam_checks: int = 0
+    incremental_seam_mismatches: int = 0
+    incremental_verification_checks: int = 0
+    incremental_verification_mismatches: int = 0
+    incremental_verification_mismatched_cells: int = 0
+    last_verification_mismatch_revision: Optional[int] = None
 
 
 class SemanticVoronoiGraph:
@@ -204,7 +234,39 @@ class SemanticVoronoiGraph:
         observed = np.asarray(self.occupancy.observed, dtype=bool).copy()
         traversable = observed & ~inflated
         resolution = float(self.occupancy.config.grid_resolution)
-        clearance = _distance_to_false(traversable) * resolution
+
+        traversable_unchanged = (
+            self._snapshot is not None
+            and self._last_traversable is not None
+            and np.array_equal(traversable, self._last_traversable)
+        )
+        observed_unchanged = (
+            self._last_observed is not None
+            and np.array_equal(observed, self._last_observed)
+        )
+        if traversable_unchanged and observed_unchanged and not force:
+            self._stats.last_changed_cells = 0
+            self._stats.last_traversable_changed_cells = 0
+            self._stats.last_observed_changed_cells = 0
+            self._reset_incremental_diagnostics()
+            self._stats.unchanged_updates += 1
+            self._snapshot = SemanticVoronoiSnapshot(
+                revision=int(self.occupancy.revision),
+                nodes=self._snapshot.nodes,
+                edges=self._snapshot.edges,
+                frontiers=self._snapshot.frontiers,
+                semantics=self._snapshot.semantics,
+                skeleton_cells=self._snapshot.skeleton_cells,
+                regions=self._snapshot.regions,
+                doorways=self._snapshot.doorways,
+            )
+            return self._snapshot
+
+        clearance = (
+            self._last_clearance
+            if traversable_unchanged and self._last_clearance is not None
+            else _distance_to_false(traversable) * resolution
+        )
 
         skeleton: Optional[np.ndarray] = None
         can_increment = (
@@ -221,25 +283,39 @@ class SemanticVoronoiGraph:
                 observed != self._last_observed if self._last_observed is not None else np.ones_like(observed)
             )
             self._stats.last_changed_cells = int((changed | observed_changed).sum())
-            skeleton = self._incremental_skeleton(traversable, clearance, changed, resolution)
-            if skeleton is not None:
-                self._stats.incremental_updates += 1
+            self._stats.last_traversable_changed_cells = int(changed.sum())
+            self._stats.last_observed_changed_cells = int(observed_changed.sum())
+            self._reset_incremental_diagnostics()
+            if not changed.any():
+                skeleton = self._last_skeleton
+                self._stats.unchanged_updates += 1
             else:
-                self._stats.incremental_fallbacks += 1
-        elif changed_hint:
+                started = perf_counter()
+                skeleton = self._incremental_skeleton(traversable, clearance, changed, resolution)
+                self._stats.incremental_seconds += perf_counter() - started
+                if skeleton is not None:
+                    self._stats.incremental_updates += 1
+                else:
+                    self._stats.incremental_fallbacks += 1
+                    reason = self._stats.last_incremental_fallback_reason or 'unknown'
+                    self._stats.incremental_fallback_reasons[reason] = (
+                        self._stats.incremental_fallback_reasons.get(reason, 0) + 1
+                    )
+        else:
             self._stats.last_changed_cells = len(changed_hint)
+            self._stats.last_traversable_changed_cells = 0
+            self._stats.last_observed_changed_cells = 0
+            self._reset_incremental_diagnostics()
 
         if skeleton is None:
+            started = perf_counter()
             skeleton = self._build_skeleton(traversable, clearance, resolution)
+            self._stats.full_build_seconds += perf_counter() - started
             self._stats.builds += 1
 
         # When the traversable mask is unchanged the clearance field and the
         # skeleton are unchanged too, so the compressed graph can be reused.
-        reuse_graph = (
-            self._snapshot is not None
-            and self._last_traversable is not None
-            and np.array_equal(traversable, self._last_traversable)
-        )
+        reuse_graph = traversable_unchanged
         if reuse_graph:
             nodes: List[VoronoiNode] = list(self._snapshot.nodes)
             edges: List[VoronoiEdge] = list(self._snapshot.edges)
@@ -345,6 +421,31 @@ class SemanticVoronoiGraph:
         )
         return result
 
+    def _reset_incremental_diagnostics(self):
+        self._stats.last_changed_components = 0
+        self._stats.last_window_count = 0
+        self._stats.last_window_cells = 0
+        self._stats.last_window_work_cells = 0
+        self._stats.last_seam_band_cells = 0
+        self._stats.last_window_fraction = 0.0
+        self._stats.last_window_work_fraction = 0.0
+        self._stats.last_window_to_changed_ratio = 0.0
+        self._stats.last_incremental_fallback_reason = None
+
+    def _record_incremental_window_evaluation(self, changed_cells: int):
+        self._stats.incremental_window_evaluations += 1
+        self._stats.incremental_changed_cells_total += int(changed_cells)
+        self._stats.incremental_window_cells_total += self._stats.last_window_cells
+        self._stats.incremental_window_work_cells_total += self._stats.last_window_work_cells
+        self._stats.incremental_max_window_count = max(
+            self._stats.incremental_max_window_count,
+            self._stats.last_window_count,
+        )
+        self._stats.incremental_max_window_fraction = max(
+            self._stats.incremental_max_window_fraction,
+            self._stats.last_window_fraction,
+        )
+
     def to_dict(self) -> dict:
         return self.cached_snapshot().to_dict()
 
@@ -379,35 +480,179 @@ class SemanticVoronoiGraph:
         if not changed.any():
             return self._last_skeleton
 
-        rows, cols = np.nonzero(changed)
-        row_min, row_max = int(rows.min()), int(rows.max())
-        col_min, col_max = int(cols.min()), int(cols.max())
         shape = traversable.shape
         spur_cells = int(np.ceil(self.config.spur_length / resolution))
         guard = int(self.config.incremental_guard_cells)
+        base_clusters = [set(component) for component in _components(set(_mask_cells(changed)))]
+        self._stats.last_changed_components = len(base_clusters)
 
-        # Skeleton perturbations propagate roughly as far as the local free
-        # space is thick. Estimate that reach from the clearance around the
-        # changed core only; the seam-band guard below catches the rare cases
-        # where the estimate is too optimistic and forces a full rebuild.
-        reach = spur_cells + int(self.config.incremental_margin_cells)
-        for _ in range(6):
-            r0 = max(0, row_min - reach)
-            r1 = min(shape[0], row_max + reach + 1)
-            c0 = max(0, col_min - reach)
-            c1 = min(shape[1], col_max + reach + 1)
-            local = clearance[r0:r1, c0:c1]
-            previous = self._last_clearance[r0:r1, c0:c1] if self._last_clearance is not None else local
-            max_clearance = max(
-                float(local.max()) if local.size else 0.0,
-                float(previous.max()) if previous.size else 0.0,
+        # A single bounding box around every changed cell is pathological for
+        # sparse updates: two small, distant changes make the untouched space
+        # between them part of the update window. Build one independently
+        # guarded window per local cluster and merge only overlapping seam/write
+        # zones. Start from a deliberately local reach; when the seam proves it
+        # insufficient, grow it geometrically and retry before falling back.
+        reach_boost = 0
+        while True:
+            clusters = [set(cluster) for cluster in base_clusters]
+            while True:
+                specifications = [
+                    self._incremental_window(
+                        cluster,
+                        clearance,
+                        resolution,
+                        shape,
+                        spur_cells,
+                        guard,
+                        reach_boost,
+                    )
+                    for cluster in clusters
+                ]
+                parent = list(range(len(clusters)))
+
+                def find(index: int) -> int:
+                    while parent[index] != index:
+                        parent[index] = parent[parent[index]]
+                        index = parent[index]
+                    return index
+
+                def union(left: int, right: int):
+                    left_root, right_root = find(left), find(right)
+                    if left_root != right_root:
+                        parent[right_root] = left_root
+
+                for left in range(len(specifications)):
+                    for right in range(left + 1, len(specifications)):
+                        if _windows_overlap(specifications[left][2], specifications[right][2]):
+                            union(left, right)
+
+                merged: Dict[int, Set[GridCell]] = {}
+                for index, cluster in enumerate(clusters):
+                    merged.setdefault(find(index), set()).update(cluster)
+                next_clusters = sorted(merged.values(), key=min)
+                if len(next_clusters) == len(clusters):
+                    break
+                clusters = next_clusters
+
+            windows = [specification[0] for specification in specifications]
+            window_cells = _window_union_area(windows, shape)
+            window_work_cells = sum(_window_area(window) for window in windows)
+            seam_band_cells = sum(
+                _window_area(specification[2]) - _window_area(specification[1])
+                for specification in specifications
             )
-            needed = int(ceil(max_clearance / resolution)) + spur_cells + int(self.config.incremental_margin_cells)
-            if needed <= reach:
-                break
-            reach = needed
-        else:
-            return None
+            changed_cells = int(changed.sum())
+            self._stats.last_window_count = len(specifications)
+            self._stats.last_window_cells = int(window_cells)
+            self._stats.last_window_work_cells = int(window_work_cells)
+            self._stats.last_seam_band_cells = int(seam_band_cells)
+            self._stats.last_window_fraction = float(window_cells / traversable.size)
+            self._stats.last_window_work_fraction = float(window_work_cells / traversable.size)
+            self._stats.last_window_to_changed_ratio = float(window_cells / max(changed_cells, 1))
+            if window_cells > self.config.incremental_max_window_fraction * traversable.size:
+                self._stats.last_incremental_fallback_reason = 'window_fraction'
+                self._record_incremental_window_evaluation(changed_cells)
+                return None
+
+            spliced = self._last_skeleton.copy()
+            seam_mismatch = False
+            for window, inner, band in specifications:
+                sub_traversable = traversable[window[0] : window[1], window[2] : window[3]]
+                sub_clearance = clearance[window[0] : window[1], window[2] : window[3]]
+                sub_skeleton = _thin(sub_traversable)
+                sub_skeleton = _prune_spurs(sub_skeleton, spur_cells)
+                if self.config.min_clearance > 0.0:
+                    sub_skeleton &= sub_clearance + 1e-12 >= self.config.min_clearance
+                    sub_skeleton = _prune_spurs(sub_skeleton, spur_cells)
+                sub_skeleton &= sub_traversable
+
+                old_band = self._last_skeleton[band[0] : band[1], band[2] : band[3]]
+                new_band = sub_skeleton[
+                    band[0] - window[0] : band[1] - window[0],
+                    band[2] - window[2] : band[3] - window[2],
+                ]
+                ring = np.ones(old_band.shape, dtype=bool)
+                interior = (
+                    inner[0] - band[0],
+                    old_band.shape[0] - (band[1] - inner[1]),
+                    inner[2] - band[2],
+                    old_band.shape[1] - (band[3] - inner[3]),
+                )
+                ring[interior[0] : interior[1], interior[2] : interior[3]] = False
+                self._stats.incremental_seam_checks += 1
+                if np.any(old_band[ring] != new_band[ring]):
+                    self._stats.incremental_seam_mismatches += 1
+                    seam_mismatch = True
+                    break
+
+                spliced[inner[0] : inner[1], inner[2] : inner[3]] = sub_skeleton[
+                    inner[0] - window[0] : inner[1] - window[0],
+                    inner[2] - window[2] : inner[3] - window[2],
+                ]
+
+            if not seam_mismatch:
+                spliced &= traversable
+                self._record_incremental_window_evaluation(changed_cells)
+                if self.config.verify_incremental:
+                    # The seam is a cheap guard, not a proof of global equality.
+                    # Smoke runs compare the complete result and fall back safely.
+                    started = perf_counter()
+                    reference = self._build_skeleton(traversable, clearance, resolution)
+                    self._stats.verification_seconds += perf_counter() - started
+                    mismatched_cells = int(np.count_nonzero(spliced != reference))
+                    self._stats.incremental_verification_checks += 1
+                    if mismatched_cells:
+                        self._stats.incremental_verification_mismatches += 1
+                        self._stats.incremental_verification_mismatched_cells += mismatched_cells
+                        self._stats.last_verification_mismatch_revision = int(self.occupancy.revision)
+                        self._stats.last_incremental_fallback_reason = 'verification_mismatch'
+                        return None
+                return spliced
+
+            next_boost = (
+                max(guard, int(self.config.incremental_margin_cells))
+                if reach_boost == 0
+                else 2 * reach_boost
+            )
+            if next_boost > max(shape):
+                self._stats.last_incremental_fallback_reason = 'seam_mismatch'
+                self._record_incremental_window_evaluation(changed_cells)
+                return None
+            reach_boost = next_boost
+
+    def _incremental_window(
+        self,
+        changed_cells: Set[GridCell],
+        clearance: np.ndarray,
+        resolution: float,
+        shape: Tuple[int, int],
+        spur_cells: int,
+        guard: int,
+        reach_boost: int = 0,
+    ) -> Optional[Tuple[GridWindow, GridWindow, GridWindow]]:
+        rows = [cell[0] for cell in changed_cells]
+        cols = [cell[1] for cell in changed_cells]
+        row_min, row_max = min(rows), max(rows)
+        col_min, col_max = min(cols), max(cols)
+
+        # Estimate propagation from the cells that actually changed. Expanding
+        # the probe recursively pulled unrelated high-clearance room centers
+        # into the estimate and made most windows nearly map-sized. Both the
+        # previous and current clearance are sampled so inserting an obstacle
+        # in open space still receives the old free-space radius. If this local
+        # estimate is optimistic, the seam comparison below rejects the splice
+        # and safely falls back to a full rebuild.
+        local = clearance[rows, cols]
+        previous = self._last_clearance[rows, cols] if self._last_clearance is not None else local
+        max_clearance = max(
+            float(local.max()) if local.size else 0.0,
+            float(previous.max()) if previous.size else 0.0,
+        )
+        reach = (
+            int(ceil(max_clearance / resolution))
+            + spur_cells
+            + reach_boost
+        )
 
         window = (
             max(0, row_min - 2 * reach - guard),
@@ -415,23 +660,6 @@ class SemanticVoronoiGraph:
             max(0, col_min - 2 * reach - guard),
             min(shape[1], col_max + 2 * reach + guard + 1),
         )
-        window_cells = (window[1] - window[0]) * (window[3] - window[2])
-        self._stats.last_window_cells = int(window_cells)
-        if window_cells > self.config.incremental_max_window_fraction * traversable.size:
-            return None
-
-        sub_traversable = traversable[window[0] : window[1], window[2] : window[3]]
-        sub_clearance = clearance[window[0] : window[1], window[2] : window[3]]
-        sub_skeleton = _thin(sub_traversable)
-        sub_skeleton = _prune_spurs(sub_skeleton, spur_cells)
-        if self.config.min_clearance > 0.0:
-            sub_skeleton &= sub_clearance + 1e-12 >= self.config.min_clearance
-            sub_skeleton = _prune_spurs(sub_skeleton, spur_cells)
-        sub_skeleton &= sub_traversable
-
-        # Seam band: ring between core+reach and core+reach+guard, clipped to
-        # the window. Inside it both the cached skeleton (no core influence)
-        # and the window skeleton (no truncation artifacts) must agree.
         inner = (
             max(window[0], row_min - reach),
             min(window[1], row_max + reach + 1),
@@ -444,26 +672,7 @@ class SemanticVoronoiGraph:
             max(window[2], inner[2] - guard),
             min(window[3], inner[3] + guard),
         )
-        old_band = self._last_skeleton[band[0] : band[1], band[2] : band[3]]
-        new_band = sub_skeleton[band[0] - window[0] : band[1] - window[0], band[2] - window[2] : band[3] - window[2]]
-        ring = np.ones(old_band.shape, dtype=bool)
-        interior = (
-            inner[0] - band[0],
-            old_band.shape[0] - (band[1] - inner[1]),
-            inner[2] - band[2],
-            old_band.shape[1] - (band[3] - inner[3]),
-        )
-        ring[interior[0] : interior[1], interior[2] : interior[3]] = False
-        if np.any(old_band[ring] != new_band[ring]):
-            return None
-
-        spliced = self._last_skeleton.copy()
-        spliced[inner[0] : inner[1], inner[2] : inner[3]] = sub_skeleton[
-            inner[0] - window[0] : inner[1] - window[0],
-            inner[2] - window[2] : inner[3] - window[2],
-        ]
-        spliced &= traversable
-        return spliced
+        return window, inner, band
 
     def _compress(
         self,
@@ -608,10 +817,11 @@ class SemanticVoronoiGraph:
         for obj in sorted(self._semantics.values(), key=lambda item: item.node_id):
             xy = (float(obj.position[0]), float(obj.position[1]))
             cell = self.occupancy.world_to_cell(xy)
-            candidates = list(nodes)
-            if cell is not None and labels[cell] >= 0:
-                reachable = [node for node in nodes if labels[node.cell] == labels[cell]]
-                candidates = reachable or candidates
+            candidates: List[VoronoiNode] = []
+            if cell is not None:
+                anchor = cell if labels[cell] >= 0 else _nearest_true_cell(cell, traversable)
+                if anchor is not None and labels[anchor] >= 0:
+                    candidates = [node for node in nodes if labels[node.cell] == labels[anchor]]
             nearest = _nearest_node(xy, candidates)
             attachments.append(
                 SemanticAttachment(
@@ -815,10 +1025,10 @@ class SemanticVoronoiGraph:
 
         region_ids = tuple(sorted(region_index, key=lambda region_id: region_index[region_id]))
         if _ndimage is None or not skeleton.any():
-            assigned = np.where(traversable, skeleton_region, -1)
+            assigned = _propagate_region_labels(skeleton_region, traversable)
             self._last_region_assignment = (assigned.astype(np.int32), region_ids)
             counts = np.bincount(
-                skeleton_region[skeleton_region >= 0].reshape(-1),
+                assigned[assigned >= 0].reshape(-1),
                 minlength=len(region_index),
             )
             return {region_id: float(counts[index] * cell_area) for region_id, index in region_index.items()}
@@ -1130,6 +1340,29 @@ def _connected_neighbors(cell: GridCell, cells: Set[GridCell]) -> List[GridCell]
     return sorted(result)
 
 
+def _window_area(window: GridWindow) -> int:
+    return (window[1] - window[0]) * (window[3] - window[2])
+
+
+def _window_union_area(windows: Sequence[GridWindow], shape: Tuple[int, int]) -> int:
+    coverage = np.zeros(shape, dtype=bool)
+    for row_start, row_stop, column_start, column_stop in windows:
+        coverage[row_start:row_stop, column_start:column_stop] = True
+    return int(coverage.sum())
+
+
+def _windows_overlap(
+    left: GridWindow,
+    right: GridWindow,
+) -> bool:
+    return not (
+        left[1] <= right[0]
+        or right[1] <= left[0]
+        or left[3] <= right[2]
+        or right[3] <= left[2]
+    )
+
+
 def _components(cells: Set[GridCell]) -> List[Set[GridCell]]:
     if not cells:
         return []
@@ -1184,6 +1417,37 @@ def _component_labels(mask: np.ndarray) -> np.ndarray:
         for cell in group:
             labels[cell] = label
     return labels
+
+
+def _nearest_true_cell(origin: GridCell, mask: np.ndarray) -> Optional[GridCell]:
+    """Return the nearest true cell without silently crossing map bounds."""
+
+    if mask[origin]:
+        return origin
+    rows, cols = np.nonzero(mask)
+    if not len(rows):
+        return None
+    distances = (rows - origin[0]) ** 2 + (cols - origin[1]) ** 2
+    index = int(np.argmin(distances))
+    return int(rows[index]), int(cols[index])
+
+
+def _propagate_region_labels(seeds: np.ndarray, traversable: np.ndarray) -> np.ndarray:
+    """Assign every reachable free cell to a seeded region without SciPy."""
+
+    assigned = np.where(traversable, seeds, -1).astype(np.int32)
+    queue = deque(tuple(int(value) for value in cell) for cell in np.argwhere(assigned >= 0))
+    while queue:
+        row, col = queue.popleft()
+        for neighbor in _all_neighbors((row, col)):
+            nr, nc = neighbor
+            if not (0 <= nr < assigned.shape[0] and 0 <= nc < assigned.shape[1]):
+                continue
+            if not traversable[neighbor] or assigned[neighbor] >= 0:
+                continue
+            assigned[neighbor] = assigned[row, col]
+            queue.append(neighbor)
+    return assigned
 
 
 def _all_neighbors(cell: GridCell) -> Iterable[GridCell]:

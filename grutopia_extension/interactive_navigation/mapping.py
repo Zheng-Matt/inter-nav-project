@@ -80,6 +80,10 @@ class SemanticDetection:
     embedding: Optional[Tuple[float, ...]] = None
     point_count: int = 1
     step: int = 0
+    sources: Tuple[str, ...] = ()
+    # Distinct labels observed for this object in one camera frame. Geometry
+    # can be fused without discarding a lower-confidence target label.
+    label_evidence: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,7 @@ class SceneGraphNode:
     embedding: Optional[Tuple[float, ...]] = None
     point_count: int = 1
     last_seen_step: int = 0
+    sources: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -495,17 +500,29 @@ class SceneGraphMap:
         self._objects: Dict[str, SceneGraphNode] = {}
         self._object_position_sums: Dict[str, np.ndarray] = {}
         self._object_embedding_sums: Dict[str, np.ndarray] = {}
+        self._object_label_counts: Dict[str, Dict[str, int]] = {}
+
+    def label_counts(self, node_id: str) -> Dict[str, int]:
+        return dict(self._object_label_counts.get(node_id, {}))
 
     def update_detections(self, detections: Iterable[SemanticDetection]):
-        for detection in detections:
+        # One representative per node and capture step. Process the strongest
+        # same-frame proposal first; cached results must not add evidence again.
+        for detection in sorted(detections, key=lambda item: (item.step, -item.confidence)):
             label = detection.label.strip() or 'unknown'
+            labels = tuple(dict.fromkeys(
+                observed.strip()
+                for observed in (*detection.label_evidence, label)
+                if observed.strip()
+            ))
             candidates = [
                 node
                 for node in self._objects.values()
-                if (
-                    node.label == label
-                    or _embedding_similarity(node.embedding, detection.embedding) >= 0.86
-                )
+                # Image similarity alone cannot establish object identity across
+                # classes: keep their positions, counts and embeddings separate.
+                if (canonical_semantic_label(node.label) == canonical_semantic_label(label)
+                    or ('qwen_vl' not in detection.sources and 'qwen_vl' not in node.sources
+                        and _embedding_similarity(node.embedding, detection.embedding) >= 0.86))
                 and np.linalg.norm(
                     np.asarray(node.position[:2]) - np.asarray(detection.position[:2])
                 )
@@ -518,7 +535,14 @@ class SceneGraphMap:
                         np.asarray(candidate.position[:2]) - np.asarray(detection.position[:2])
                     ),
                 )
+                if 'qwen_vl' in detection.sources and int(detection.step) <= node.last_seen_step:
+                    continue
                 count = node.observations + 1
+                label_counts = self._object_label_counts.setdefault(
+                    node.node_id, {node.label: node.observations}
+                )
+                for observed in labels:
+                    label_counts[observed] = label_counts.get(observed, 0) + 1
                 position_sum = self._object_position_sums[node.node_id] + np.asarray(detection.position)
                 position = tuple(float(value) for value in position_sum / count)
                 color = detection.color if detection.color is not None else node.color
@@ -553,6 +577,7 @@ class SceneGraphMap:
                     embedding=embedding,
                     point_count=node.point_count + max(1, int(detection.point_count)),
                     last_seen_step=max(node.last_seen_step, int(detection.step)),
+                    sources=tuple(dict.fromkeys((*node.sources, *detection.sources))),
                 )
                 self._object_position_sums[node.node_id] = position_sum
             else:
@@ -567,8 +592,10 @@ class SceneGraphMap:
                     embedding=detection.embedding,
                     point_count=max(1, int(detection.point_count)),
                     last_seen_step=int(detection.step),
+                    sources=tuple(dict.fromkeys(detection.sources)),
                 )
                 self._object_position_sums[node_id] = np.asarray(detection.position, dtype=np.float64)
+                self._object_label_counts[node_id] = {observed: 1 for observed in labels}
                 if detection.embedding is not None:
                     self._object_embedding_sums[node_id] = np.asarray(
                         detection.embedding,
@@ -934,6 +961,19 @@ def _color_label(color: Optional[Tuple[int, int, int]]) -> str:
 
 def _distance_xy(left: Vector3, right: Vector3) -> float:
     return hypot(left[0] - right[0], left[1] - right[1])
+
+
+def canonical_semantic_label(value: str) -> str:
+    """Normalize exact category names/aliases without guessing from substrings."""
+    label = ' '.join(str(value).casefold().replace('_', ' ').replace('-', ' ').split())
+    return {
+        'couch': 'sofa',
+        'fridge': 'refrigerator',
+        'potted plant': 'plant',
+        'tv': 'television',
+        'tv screen': 'television',
+        'television screen': 'television',
+    }.get(label, label)
 
 
 def _embedding_similarity(left, right) -> float:

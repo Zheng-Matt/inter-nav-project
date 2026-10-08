@@ -8,8 +8,11 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from grutopia_extension.interactive_navigation.mapping import MappingConfig, SceneGraphNode
-from grutopia_extension.interactive_navigation.mapping_runtime import MapNavigationRuntime
+from grutopia_extension.interactive_navigation.mapping import MappingConfig, SceneGraphNode, canonical_semantic_label
+from grutopia_extension.interactive_navigation.mapping_runtime import (
+    MapNavigationRuntime,
+    SemanticDetectionMode,
+)
 from grutopia_extension.interactive_navigation.semantic_exploration import (
     AdaptiveExplorationPlanner,
     ExplorationConfig,
@@ -35,29 +38,56 @@ class SemanticExplorationConfig:
     frontier_reached_distance: float = 0.45
     fall_height: float = 0.12
     safe_base_height: float = 0.22
+    # `isaac` = simulator ground-truth labels only, `open_vocab` = VLM
+    # detections only, `hybrid` = fused. See SemanticDetectionMode.
+    semantic_detection_mode: str = 'hybrid'
+    open_vocabulary_startup_error: Optional[str] = None
+    target_semantic_classifier: str = 'clip'
     target_min_observations: int = 2
     target_embedding_threshold: float = 0.24
+    require_lexical_confirmation: bool = True
+    target_confirmation_min_label_observations: int = 8
+    target_confirmation_min_label_fraction: float = 0.60
     frontier_selection_interval: int = 160
     # Incremental Voronoi updates keep frequent topology refreshes cheap; a
     # short interval also keeps changed-cell windows small and splice-able.
     topology_update_interval: int = 40
     max_forward_speed: float = 0.80
     max_lateral_speed: float = 0.20
+    enable_target_cues: bool = True
+    target_cue_stale_steps: int = 480
+    target_cue_navigation_steps: int = 1200
+    target_cue_observe_steps: int = 96
+    target_cue_cooldown_steps: int = 800
 
     def __post_init__(self):
+        if self.target_semantic_classifier not in ('clip', 'qwen-vl'):
+            raise ValueError('target_semantic_classifier must be clip or qwen-vl')
         if not self.target_query.strip():
             raise ValueError('target_query cannot be empty')
+        object.__setattr__(
+            self,
+            'semantic_detection_mode',
+            SemanticDetectionMode.parse(self.semantic_detection_mode).value,
+        )
         for name in (
             'max_steps',
             'target_min_observations',
+            'target_confirmation_min_label_observations',
             'frontier_selection_interval',
             'topology_update_interval',
+            'target_cue_stale_steps',
+            'target_cue_navigation_steps',
+            'target_cue_observe_steps',
+            'target_cue_cooldown_steps',
         ):
             if getattr(self, name) <= 0:
                 raise ValueError(f'{name} must be positive')
         for name in ('target_distance', 'frontier_reached_distance', 'safe_base_height'):
             if getattr(self, name) <= 0:
                 raise ValueError(f'{name} must be positive')
+        if not 0.0 < self.target_confirmation_min_label_fraction <= 1.0:
+            raise ValueError('target_confirmation_min_label_fraction must be in (0, 1]')
 
 
 @dataclass(frozen=True)
@@ -69,6 +99,9 @@ class SemanticExplorationResult:
     target_position: Optional[Tuple[float, float, float]]
     failure_reason: Optional[str]
     statistics: dict
+    approach_goal: Optional[Tuple[float, float, float]] = None
+    goal_distance: Optional[float] = None
+    arrival_threshold: float = 0.70
 
     @property
     def terminal(self) -> bool:
@@ -79,16 +112,29 @@ class SemanticExplorationResult:
         return self.status == SemanticExplorationStatus.SUCCEEDED
 
     def as_event(self) -> dict:
+        """Keep terminal stdout small; the map and run summary hold details."""
         return {
             'event': 'semantic_exploration_result',
+            'status': self.status.value,
             'success': self.success,
             'step': self.step,
             'target_query': self.target_query,
-            'position': list(self.position),
-            'target_position': None if self.target_position is None else list(self.target_position),
-            'failure_reason': self.failure_reason,
-            'statistics': self.statistics,
+            'position': [round(value, 3) for value in self.position],
+            'goal_distance_m': None if self.goal_distance is None else round(self.goal_distance, 3),
+            'arrival_threshold_m': self.arrival_threshold,
+            'reason': self.failure_reason,
         }
+
+
+@dataclass
+class _CueTrack:
+    cue_id: str
+    position: Tuple[float, float, float]
+    confidence: float
+    last_step: int
+    observations: int = 1
+    classified_label: str = 'unknown'
+    cooldown_until: int = -1
 
 
 class SemanticExplorationComponent:
@@ -112,6 +158,8 @@ class SemanticExplorationComponent:
             rgb_clears_free_space=False,
             semantic_target=config.target_query,
             open_vocabulary_perception=perception,
+            semantic_detection_mode=config.semantic_detection_mode,
+            open_vocabulary_startup_error=config.open_vocabulary_startup_error,
             use_semantic_voronoi=True,
             semantic_voronoi_config=config.voronoi,
             topology_update_interval=config.topology_update_interval,
@@ -128,7 +176,15 @@ class SemanticExplorationComponent:
         self._target_embedding = None
         self._target_embedding_attempted = False
         self._target_lexical = False
+        self._rejected_embedding_targets = set()
         self._trajectory = []
+        self._cue_tracks = []
+        self._next_cue_id = 0
+        self.target_cue: Optional[_CueTrack] = None
+        self._cue_started_step = None
+        self._cue_observe_step = None
+        self._cue_goal = None
+        self.cue_history = []
         self._sync_runtime_state()
 
     @staticmethod
@@ -139,14 +195,56 @@ class SemanticExplorationComponent:
     def state(self) -> str:
         if self.target_node is not None:
             return 'navigate_to_semantic_target'
+        if self.target_cue is not None:
+            return 'observe_target_cue' if self._cue_observe_step is not None else 'navigate_to_target_cue'
         if self.last_decision is None:
             return 'initialize_exploration'
         return f'explore_{self.last_decision.mode.value}'
+
+    def _node_label_evidence(self, node: SceneGraphNode) -> Tuple[int, int, int]:
+        counts = self.mapping.map.scene_graph.label_counts(node.node_id)
+        if not counts:
+            counts = {node.label: node.observations}
+        query = _normalize_label(self.config.target_query)
+        matching_counts = [
+            count for label, count in counts.items()
+            if ((canonical_semantic_label(label) == canonical_semantic_label(query))
+                if self.config.target_semantic_classifier == 'qwen-vl'
+                else (query in _normalize_label(label) or _normalize_label(label) in query))
+        ]
+        return sum(matching_counts), sum(counts.values()), max(matching_counts, default=0)
+
+    def _target_label_support(self) -> Tuple[int, int]:
+        if self.target_node is None:
+            return 0, 0
+        matching, total, _ = self._node_label_evidence(self.target_node)
+        return matching, total
+
+    @property
+    def target_confirmed(self) -> bool:
+        if self.target_node is None:
+            return False
+        if not self.config.require_lexical_confirmation:
+            return True
+        matching, total, repeated_label = self._node_label_evidence(self.target_node)
+        return (
+            self._target_lexical
+            and matching >= self.config.target_confirmation_min_label_observations
+            and total > 0
+            and (
+                matching / total >= self.config.target_confirmation_min_label_fraction
+                # A stable refrigerator can also be called "door" in most
+                # frames. Repeated identical target labels are stronger
+                # evidence than their fraction of all node observations.
+                or repeated_label >= self.config.target_confirmation_min_label_observations
+            )
+        )
 
     def update(self, step: int, robot_observation: dict):
         self.mapping.update(step, robot_observation)
         position = _position(robot_observation)
         self._trajectory.append(position)
+        self._collect_target_cues(step)
         if self.target_node is None:
             self.target_node = self._best_target_node()
         else:
@@ -159,26 +257,44 @@ class SemanticExplorationComponent:
                 self.target_node,
             )
             lexical = self._lexical_target_node()
-            if lexical is not None and lexical.node_id != self.target_node.node_id:
-                # Embedding-similarity locks are provisional: a node whose
-                # label lexically matches the query (e.g. a real refrigerator
-                # entering the scene graph) always wins over a look-alike
-                # matched only through CLIP similarity. A lexical lock can
-                # also be upgraded, but only by a strictly better-observed
-                # same-label node: long-range depth medians create duplicate
-                # ghost nodes in front of the real object, and the true
-                # instance accumulates observations much faster. Observations
-                # are compared before confidence because confidence saturates
-                # at 1.0, which let a 44-observation ghost outrank the real
-                # 1788-observation refrigerator in a recorded run.
+            if lexical is None:
+                self._target_lexical = False
+            elif lexical.node_id == self.target_node.node_id:
+                self._target_lexical = True
+            else:
+                # An embedding-only lock is provisional. For two lexical
+                # nodes, prefer evidence for the requested label before total
+                # observations; generic "door" frames must not hold the lock
+                # against a better-observed refrigerator.
                 if not self._target_lexical or (
-                    (lexical.observations, lexical.confidence)
-                    > (self.target_node.observations, self.target_node.confidence)
+                    (self._node_label_evidence(lexical)[0], lexical.observations, lexical.confidence)
+                    > (
+                        self._node_label_evidence(self.target_node)[0],
+                        self.target_node.observations,
+                        self.target_node.confidence,
+                    )
                 ):
                     self.target_node = lexical
                     self._target_lexical = True
                     self.target_navigation_position = None
+        if (
+            self.config.require_lexical_confirmation
+            and self.target_node is not None
+            and not self.target_confirmed
+            and self.target_navigation_position is not None
+            and _distance_xy(position, self.target_navigation_position) <= self.config.target_distance
+        ):
+            # An embedding match is a place to investigate, not proof that
+            # the named object was found. Continue exploring after reaching it.
+            self._rejected_embedding_targets.add(self.target_node.node_id)
+            self.target_node = None
+            self.target_navigation_position = None
+            self.current_goal = None
+            self.current_frontier_id = None
+            self._last_selection_step = step - self.config.frontier_selection_interval
         if self.target_node is not None:
+            if self.target_cue is not None:
+                self._finish_target_cue(step, 'semantic_target_selected', cooldown=False)
             if self.target_navigation_position is None:
                 self.target_navigation_position = self._target_approach_position(
                     self.target_node,
@@ -186,6 +302,10 @@ class SemanticExplorationComponent:
                 )
             self.current_goal = self.target_navigation_position
             self.current_frontier_id = None
+            self._sync_runtime_state()
+            return
+
+        if self._update_target_cue(step, position):
             self._sync_runtime_state()
             return
 
@@ -251,6 +371,14 @@ class SemanticExplorationComponent:
         self._sync_runtime_state()
 
     def action(self, step: int, robot_observation: dict) -> dict:
+        if self.target_cue is not None and self._cue_observe_step is not None:
+            # Face the candidate while normal camera updates collect evidence.
+            position = _position(robot_observation)
+            delta = np.asarray(self.target_cue.position[:2]) - np.asarray(position[:2])
+            w, x, y, z = robot_observation.get('orientation', (1.0, 0.0, 0.0, 0.0))
+            yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+            error = (np.arctan2(delta[1], delta[0]) - yaw + np.pi) % (2 * np.pi) - np.pi
+            return {'move_by_speed': [0.0, 0.0, float(np.clip(error, -0.35, 0.35))]}
         if self.current_goal is None:
             # A slow in-place scan exposes new RGB/LiDAR evidence before a
             # frontier exists and is also the safe fallback after plan failure.
@@ -270,17 +398,20 @@ class SemanticExplorationComponent:
 
     def evaluate(self, step: int, robot_observation: dict) -> SemanticExplorationResult:
         position = _position(robot_observation)
+        approach_goal = self.target_navigation_position
+        goal_distance = None if approach_goal is None else _distance_xy(position, approach_goal)
         status = SemanticExplorationStatus.RUNNING
         failure_reason = None
-        if (
-            self.target_node is not None
-            and self.target_navigation_position is not None
-            and _distance_xy(position, self.target_navigation_position) <= self.config.target_distance
-        ):
-            status = SemanticExplorationStatus.SUCCEEDED
-        elif position[2] < self.config.fall_height:
+        if position[2] < self.config.fall_height:
             status = SemanticExplorationStatus.FAILED
             failure_reason = 'robot_fell'
+        elif (
+            self.target_node is not None
+            and self.target_confirmed
+            and goal_distance is not None
+            and goal_distance <= self.config.target_distance
+        ):
+            status = SemanticExplorationStatus.SUCCEEDED
         elif step + 1 >= self.config.max_steps:
             status = SemanticExplorationStatus.FAILED
             failure_reason = 'global_step_limit'
@@ -294,26 +425,24 @@ class SemanticExplorationComponent:
                 None if self.target_node is None else tuple(float(value) for value in self.target_node.position)
             ),
             failure_reason=failure_reason,
-            # Full statistics walk the ever-growing scene graph and voxel map;
-            # computing them on every running step dominated the whole loop, so
-            # they are only materialized for terminal results.
+            # Full statistics are materialized only for terminal results.
             statistics=self.statistics() if terminal else {},
+            approach_goal=approach_goal,
+            goal_distance=goal_distance,
+            arrival_threshold=self.config.target_distance,
         )
 
     def progress_event(self, step: int, robot_observation: dict) -> dict:
         position = _position(robot_observation)
+        goal_distance = None if self.current_goal is None else _distance_xy(position, self.current_goal)
         return {
             'event': 'semantic_exploration_progress',
             'step': step,
             'state': self.state,
-            'position': list(position),
-            'target_query': self.config.target_query,
+            'position': [round(value, 2) for value in position],
             'target_found': self.target_node is not None,
-            'target_position': (
-                None if self.target_node is None else list(self.target_node.position)
-            ),
-            'active_goal': None if self.current_goal is None else list(self.current_goal),
-            'statistics': self.statistics(),
+            'target_confirmed': self.target_confirmed,
+            'goal_distance_m': None if goal_distance is None else round(goal_distance, 2),
         }
 
     def statistics(self) -> dict:
@@ -323,11 +452,22 @@ class SemanticExplorationComponent:
                 'exploration_state': self.state,
                 'target_query': self.config.target_query,
                 'target_found': self.target_node is not None,
+                'target_confirmed': self.target_confirmed,
+                'target_label_support': self._target_label_support()[0],
+                'rejected_provisional_targets': len(self._rejected_embedding_targets),
                 'target_node': None if self.target_node is None else self.target_node.node_id,
                 'target_match': (
                     None
                     if self.target_node is None
                     else ('lexical' if self._target_lexical else 'embedding')
+                ),
+                'target_match_method': (
+                    None
+                    if self.target_node is None
+                    else ('lexical' if self._target_lexical else 'embedding')
+                ),
+                'target_sources': (
+                    [] if self.target_node is None else list(self.target_node.sources)
                 ),
                 'active_frontier': self.current_frontier_id,
                 'active_goal': None if self.current_goal is None else list(self.current_goal),
@@ -336,6 +476,8 @@ class SemanticExplorationComponent:
                 'frontier_failures': dict(self.planner.failure_counts),
                 'frontier_blacklist': sorted(self.planner.blacklist),
                 'trajectory_points': len(self._trajectory),
+                'target_cue_id': None if self.target_cue is None else self.target_cue.cue_id,
+                'target_cue_transitions': len(self.cue_history),
             }
         )
         return stats
@@ -352,6 +494,7 @@ class SemanticExplorationComponent:
             'statistics': self.statistics(),
             'decisions': self.decision_history,
             'trajectory': [list(point) for point in self._trajectory],
+            'target_cue_history': self.cue_history,
         }
         with metadata_path.open('w', encoding='utf-8') as output_file:
             json.dump(payload, output_file, indent=2)
@@ -367,17 +510,31 @@ class SemanticExplorationComponent:
         if nodes is None:
             nodes = self._candidate_target_nodes()
         normalized_target = _normalize_label(self.config.target_query)
-        lexical = [
-            node
-            for node in nodes
-            if normalized_target in _normalize_label(node.label)
-            or _normalize_label(node.label) in normalized_target
-        ]
+        lexical = []
+        for node in nodes:
+            representative_matches = (
+                canonical_semantic_label(node.label) == canonical_semantic_label(normalized_target)
+                if self.config.target_semantic_classifier == 'qwen-vl'
+                else (normalized_target in _normalize_label(node.label)
+                      or _normalize_label(node.label) in normalized_target)
+            )
+            matching, _, repeated_label = self._node_label_evidence(node)
+            if representative_matches or (
+                matching >= self.config.target_confirmation_min_label_observations
+                and repeated_label >= self.config.target_confirmation_min_label_observations
+            ):
+                lexical.append(node)
         if not lexical:
             return None
-        # Evidence first: confidence saturates at 1.0 for both real objects
-        # and long-range depth ghosts, so observation count discriminates.
-        return max(lexical, key=lambda node: (node.observations, node.confidence))
+        # Rank target-specific evidence before generic "door" observations.
+        return max(
+            lexical,
+            key=lambda node: (
+                self._node_label_evidence(node)[0],
+                node.observations,
+                node.confidence,
+            ),
+        )
 
     def _best_target_node(self) -> Optional[SceneGraphNode]:
         nodes = self._candidate_target_nodes()
@@ -387,12 +544,15 @@ class SemanticExplorationComponent:
         if lexical is not None:
             self._target_lexical = True
             return lexical
+        if self.config.target_semantic_classifier == 'qwen-vl':
+            # Qwen categories are explicit; CLIP similarity is not a class vote.
+            return None
         target_embedding = self._text_embedding()
         if target_embedding is None:
             return None
         scored = []
         for node in nodes:
-            if node.embedding is None:
+            if node.node_id in self._rejected_embedding_targets or node.embedding is None:
                 continue
             embedding = np.asarray(node.embedding, dtype=np.float32)
             if embedding.shape != target_embedding.shape:
@@ -422,7 +582,10 @@ class SemanticExplorationComponent:
         return self._target_embedding
 
     def _target_approach_position(self, node: SceneGraphNode, robot_position):
-        target = np.asarray(node.position[:2], dtype=np.float64)
+        return self._approach_position(node.position, robot_position)
+
+    def _approach_position(self, target_position, robot_position):
+        target = np.asarray(target_position[:2], dtype=np.float64)
         robot = np.asarray(robot_position[:2], dtype=np.float64)
         direction = robot - target
         norm = float(np.linalg.norm(direction))
@@ -464,6 +627,104 @@ class SemanticExplorationComponent:
                 )
                 desired = np.asarray(occupancy.cell_to_world(best), dtype=np.float64)
         return (float(desired[0]), float(desired[1]), float(robot_position[2]))
+
+    def _collect_target_cues(self, step):
+        if not self.config.enable_target_cues or self.config.target_semantic_classifier != 'qwen-vl':
+            return
+        # A frame can remain available between camera ticks: consume its capture
+        # step only once per spatial track, never as new semantic evidence.
+        if getattr(self.perception, 'last_query_status', None) != 'ok':
+            return
+        self._cue_tracks = [
+            track for track in self._cue_tracks
+            if track is self.target_cue or step <= max(
+                track.last_step + self.config.target_cue_stale_steps, track.cooldown_until,
+            )
+        ]
+        for cue in sorted(getattr(self.perception, 'last_target_cues', ()),
+                          key=lambda item: item.confidence, reverse=True):
+            if (canonical_semantic_label(cue.target_query) != canonical_semantic_label(self.config.target_query)
+                    or cue.step > step or step - cue.step > self.config.target_cue_stale_steps
+                    or not np.isfinite(cue.position).all()
+                    or self.mapping.map.occupancy.world_to_cell(cue.position[:2]) is None):
+                continue
+            nearby = [track for track in self._cue_tracks if _distance_xy(track.position, cue.position) <= 0.75]
+            track = min(nearby, key=lambda item: _distance_xy(item.position, cue.position), default=None)
+            if track is None:
+                self._next_cue_id += 1
+                self._cue_tracks.append(_CueTrack(
+                    f'cue:{self._next_cue_id}', tuple(cue.position), cue.confidence,
+                    cue.step, classified_label=cue.classified_label,
+                ))
+            elif cue.step > track.last_step:
+                track.position = tuple(float(value) for value in (
+                    np.asarray(track.position) * 0.75 + np.asarray(cue.position) * 0.25
+                ))
+                track.confidence = cue.confidence
+                track.last_step = cue.step
+                track.classified_label = cue.classified_label
+                # Cooldown observations cannot preload a new navigation lock.
+                if cue.step >= track.cooldown_until:
+                    track.observations += 1
+
+    def _finish_target_cue(self, step, reason, cooldown=True):
+        cue = self.target_cue
+        if cue is None:
+            return
+        self.cue_history.append({'step': step, 'event': 'released', 'cue_id': cue.cue_id, 'reason': reason})
+        if cooldown:
+            cue.cooldown_until = step + self.config.target_cue_cooldown_steps
+            cue.observations = 0
+        self.target_cue = None
+        self._cue_started_step = self._cue_observe_step = self._cue_goal = None
+        self.current_goal = None
+        self.current_frontier_id = None
+        self._last_selection_step = step - self.config.frontier_selection_interval
+
+    def _update_target_cue(self, step, position):
+        if self.target_cue is not None:
+            reason = None
+            if step - self.target_cue.last_step > self.config.target_cue_stale_steps:
+                reason = 'stale'
+            elif self._cue_observe_step is not None:
+                if step - self._cue_observe_step >= self.config.target_cue_observe_steps:
+                    reason = 'unconfirmed_after_observation'
+            elif step - self._cue_started_step >= self.config.target_cue_navigation_steps:
+                reason = 'navigation_timeout'
+            if reason is not None:
+                self._finish_target_cue(step, reason)
+                # Give exploration a turn before considering another candidate.
+                return False
+        if self.target_cue is None:
+            candidates = [track for track in self._cue_tracks
+                          if track.observations >= self.config.target_min_observations
+                          and step >= track.cooldown_until
+                          and step - track.last_step <= self.config.target_cue_stale_steps]
+            if not candidates:
+                return False
+            cue = max(candidates, key=lambda item: (
+                item.observations, item.confidence, -_distance_xy(position, item.position),
+            ))
+            goal = self._approach_position(cue.position, position)
+            occupancy = self.mapping.map.occupancy
+            cell = occupancy.world_to_cell(goal[:2])
+            if cell is None or not occupancy.observed[cell] or occupancy.inflated_mask()[cell]:
+                cue.cooldown_until = step + self.config.target_cue_cooldown_steps
+                cue.observations = 0
+                return False
+            self.target_cue = cue
+            self._cue_started_step, self._cue_goal = step, goal
+            self.current_frontier_id = None
+            self.cue_history.append({
+                'step': step, 'event': 'selected', 'cue_id': cue.cue_id,
+                'position': list(cue.position), 'classified_label': cue.classified_label,
+            })
+        self.current_goal = self._cue_goal
+        if (self._cue_observe_step is None
+                and _distance_xy(position, self._cue_goal) <= self.config.target_distance):
+            self._cue_observe_step = step
+            self.cue_history.append({'step': step, 'event': 'observing', 'cue_id': self.target_cue.cue_id})
+        return True
 
     def _sync_runtime_state(self):
         self.mapping.exploration_state = self.state

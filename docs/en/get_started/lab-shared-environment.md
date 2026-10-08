@@ -1,5 +1,8 @@
 # Lab shared environment (this server)
 
+
+> The default demo now uses Qwen3-VL-8B-Instruct for object classification. Start the additional port 12185 service in its own environment; see [Qwen-VL integration](../../../grutopia/demo/QWEN_VL_SEMANTICS.md). Use `--semantic-classifier clip` for the legacy perception setup below.
+
 If your account is in the `embodied` group on this machine, **do not** install
 Isaac Sim or download models yourself. Code still comes from GitHub; conda,
 weights, and scenes are already on the shared disk.
@@ -66,17 +69,20 @@ Isaac compiles house materials.
 
 ```bash
 $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
-  --gpu 0 --no-open-vocabulary --no-qwen --target refrigerator
+  --gpu 0 --detection-mode isaac --no-qwen --target refrigerator
 ```
 
-This does not need Qwen, CLIP, or the HTTP perception services.
+This does not need Qwen, CLIP, or the HTTP perception services. `--detection-mode`
+takes `isaac` (ground truth only), `open_vocab` (VLM detections only), or
+`hybrid` (both).
 
 ## 4. Full semantic demo
 
 Pick three free GPUs (example: `0`, `1`, `2`).
 
-Optional: start GroundingDINO and MobileSAM in two other terminals. If they
-are down, exploration still runs with Isaac semantic labels.
+Start GroundingDINO and MobileSAM in two other terminals. They are required for
+`open_vocab`; only `hybrid` may degrade to Isaac semantic labels when they are
+down.
 
 ```bash
 cd /path/to/your/inter-nav-project
@@ -95,6 +101,13 @@ $QWEN3_PYTHON grutopia/demo/serve_semantic_perception.py mobile-sam \
   --mobile-sam-checkpoint grutopia/assets/models/mobile_sam.pt
 ```
 
+In a third terminal, verify readiness before launching Isaac:
+
+```bash
+curl -fsS http://127.0.0.1:12181/health
+curl -fsS http://127.0.0.1:12183/health
+```
+
 Then run the demo:
 
 ```bash
@@ -102,9 +115,7 @@ $ISAAC_PYTHON grutopia/demo/go2_semantic_exploration.py \
   --gpu 0 \
   --perception-gpu 1 \
   --qwen-device cuda:2 \
-  --target refrigerator \
-  --record-dir grutopia/results/go2_semantic_exploration \
-  --map-output grutopia/results/go2_semantic_exploration/final_map
+  --target refrigerator
 ```
 
 `--gpu` is Isaac Sim, `--perception-gpu` is CLIP, `--qwen-device` is the
@@ -112,7 +123,8 @@ Qwen3-8B worker. Change `--target` to `chair` or `plant` if you want.
 
 A finished run prints `semantic_exploration_result` with `"success": true`
 and writes videos plus `final_map.json` / `final_map.npz` under
-`--record-dir`.
+a new timestamped `grutopia/results/` directory. Pass `--record-dir` only
+when you need a specific new directory name.
 
 ## Troubleshooting
 
@@ -124,4 +136,6 @@ and writes videos plus `final_map.json` / `final_map.npz` under
 | `QWEN3_PYTHON` points at Isaac Python | Source `env.sh` again. Qwen must be the `CapNav` interpreter. |
 | `No device could be created` / CUDA bad state | Unset `CUDA_VISIBLE_DEVICES`. Pass `--gpu N` only. |
 | CUDA OOM | Give Isaac, perception, and Qwen different free GPUs. |
+| `open_vocab requires ready ... before the run starts` | Start both HTTP services, check ports `12181` and `12183`, and confirm the CLIP weights are visible through `HF_HOME`. |
+| `open-vocabulary perception failed 3 consecutive frames` | Read `open_vocabulary_last_error` in the progress/error output; check the named service and GPU before retrying. |
 | First launch is slow | Full GRScenes material compile takes several minutes. Later runs are faster. |

@@ -7,6 +7,7 @@ from grutopia_extension.configs.robots.go2 import GO2_JOINT_NAMES
 from grutopia_extension.interactive_navigation.mapping_runtime import (
     _NON_OBJECT_SEMANTIC_LABELS,
 )
+from grutopia_extension.interactive_navigation.output_paths import resolve_map_output
 from grutopia_extension.interactive_navigation.point_navigation_profiles import (
     programmatic_go2_profile,
 )
@@ -52,6 +53,17 @@ load_go2_actor = _POLICY_MODULE.load_go2_actor
 
 
 class Go2NavigationSupportTest(unittest.TestCase):
+    def test_semantic_map_output_defaults_to_recording_directory(self):
+        self.assertEqual(
+            resolve_map_output('grutopia/results/open_vocab', None),
+            'grutopia/results/open_vocab/final_map',
+        )
+        self.assertEqual(resolve_map_output('', None), '')
+        self.assertEqual(
+            resolve_map_output('ignored', 'custom/final_map'),
+            'custom/final_map',
+        )
+
     def test_fallback_asset_has_expected_policy_joint_contract(self):
         root = ET.fromstring(build_fallback_go2_urdf())
         joint_names = [

@@ -1,9 +1,12 @@
 """MP4 visualizations for RGB observations and fused navigation maps."""
 
+import json
 from pathlib import Path
 
 import cv2
 import numpy as np
+
+from grutopia_extension.interactive_navigation.mapping import canonical_semantic_label
 
 
 class FixedOverviewCamera:
@@ -189,6 +192,12 @@ class InteractionVideoRecorder:
         self._trajectory = []
         self._trajectory_breaks = set()
         self._last_frames = {}
+        self._perception_events = None
+        self._last_perception_step = None
+        self._perception_frame_count = 0
+        self._video_frames = (self.output_dir / 'video_frames.jsonl').open(
+            'w', encoding='utf-8', buffering=1
+        )
 
     def _writer(self, filename: str, size):
         writer = cv2.VideoWriter(
@@ -201,7 +210,7 @@ class InteractionVideoRecorder:
             raise RuntimeError(f'OpenCV could not open MP4 writer for {filename}')
         return writer
 
-    def capture(self, step: int, state, robot_observation: dict, interaction_observation, mapping_runtime):
+    def capture(self, step: int, state, robot_observation: dict, interaction_observation, mapping_runtime, target_context=None):
         if step % self.capture_interval != 0:
             return
         position = tuple(float(value) for value in interaction_observation.robot_position)
@@ -209,21 +218,41 @@ class InteractionVideoRecorder:
             self._trajectory_breaks.add(len(self._trajectory))
         self._trajectory.append(position)
         state_name = state.value if hasattr(state, 'value') else str(state)
-        rgb_frame = self._render_camera(step, state_name, robot_observation, 'camera', 'Robot RGB')
+        mode = getattr(mapping_runtime, 'semantic_detection_mode', None)
+        uses_open_vocabulary = bool(getattr(mode, 'uses_open_vocabulary', False))
+        perception = getattr(mapping_runtime, 'open_vocabulary_perception', None)
+        debug_frame = getattr(perception, 'last_debug_frame', None)
+        if not isinstance(debug_frame, dict) or debug_frame.get('step') != step:
+            debug_frame = None
+        rgb_frame = self._render_camera(
+            step,
+            state_name,
+            robot_observation,
+            'camera',
+            ('Robot RGB (DINO + Qwen-VL)' if getattr(getattr(perception, 'config', None), 'semantic_classifier', '') == 'qwen-vl'
+             else 'Robot RGB (GroundingDINO)') if uses_open_vocabulary else 'Robot RGB (Isaac GT)',
+            model_only=uses_open_vocabulary,
+            detection_frame=debug_frame,
+        )
         third_person_frame = self._render_camera(
             step,
             state_name,
             robot_observation,
             'overview_camera',
-            'Third-person',
+            'Third-person (Isaac GT)',
         )
-        map_frame = self._render_map(step, state_name, interaction_observation, mapping_runtime)
+        map_frame = self._render_map(step, state_name, interaction_observation, mapping_runtime, target_context)
         camera_column = np.concatenate((rgb_frame, third_person_frame), axis=0)
         combined = np.concatenate((camera_column, map_frame), axis=1)
         self._writers['robot_rgb'].write(rgb_frame)
         self._writers['third_person'].write(third_person_frame)
         self._writers['map_topdown'].write(map_frame)
         self._writers['combined'].write(combined)
+        self._video_frames.write(json.dumps({
+            'frame_index': self.frame_count,
+            'step': step,
+            'state': state_name,
+        }) + '\n')
         self._last_frames = {
             'robot_rgb': rgb_frame,
             'third_person': third_person_frame,
@@ -242,13 +271,61 @@ class InteractionVideoRecorder:
             self._last_frames['robot_topdown'] = topdown_frame
         self.frame_count += 1
 
+    def record_perception(self, step: int, robot_observation: dict, mapping_runtime):
+        """Record each actual detector query with its exact camera frame."""
+
+        mode = getattr(mapping_runtime, 'semantic_detection_mode', None)
+        if not getattr(mode, 'uses_open_vocabulary', False):
+            return
+        perception = getattr(mapping_runtime, 'open_vocabulary_perception', None)
+        debug_frame = getattr(perception, 'last_debug_frame', None)
+        if (
+            not isinstance(debug_frame, dict)
+            or debug_frame.get('step') != step
+            or self._last_perception_step == step
+        ):
+            return
+        self._last_perception_step = step
+        if self._perception_events is None:
+            self._perception_events = (self.output_dir / 'groundingdino_detections.jsonl').open(
+                'w', encoding='utf-8', buffering=1
+            )
+            self._writers['groundingdino'] = self._writer('groundingdino.mp4', self.rgb_size)
+        self._perception_events.write(json.dumps({
+            **debug_frame, 'video_frame_index': self._perception_frame_count,
+        }, ensure_ascii=False) + '\n')
+        frame = self._render_camera(
+            step,
+            'perception',
+            robot_observation,
+            'camera',
+            'GroundingDINO (model output)',
+            model_only=True,
+            detection_frame=debug_frame,
+        )
+        self._writers['groundingdino'].write(frame)
+        self._last_frames['groundingdino'] = frame
+        self._perception_frame_count += 1
+
     def close(self):
+        if self._perception_events is not None:
+            self._perception_events.close()
+        self._video_frames.close()
         for writer in self._writers.values():
             writer.release()
         for name, frame in self._last_frames.items():
             cv2.imwrite(str(self.output_dir / f'{name}_preview.png'), frame)
 
-    def _render_camera(self, step: int, state: str, robot_observation: dict, sensor_name: str, title: str):
+    def _render_camera(
+        self,
+        step: int,
+        state: str,
+        robot_observation: dict,
+        sensor_name: str,
+        title: str,
+        model_only: bool = False,
+        detection_frame=None,
+    ):
         camera = robot_observation.get('sensors', {}).get(sensor_name, {})
         rgba = camera.get('rgba')
         if rgba is None:
@@ -260,9 +337,55 @@ class InteractionVideoRecorder:
             else:
                 frame = cv2.cvtColor(image[..., :3].astype(np.uint8), cv2.COLOR_RGB2BGR)
                 frame = cv2.resize(frame, self.rgb_size, interpolation=cv2.INTER_NEAREST)
-                self._draw_camera_boxes(frame, camera, image.shape[1], image.shape[0])
+                if model_only:
+                    self._draw_groundingdino_boxes(
+                        frame, detection_frame, image.shape[1], image.shape[0]
+                    )
+                else:
+                    self._draw_camera_boxes(frame, camera, image.shape[1], image.shape[0])
         self._header(frame, f'{title} | step {step} | {state}')
+        if model_only:
+            status = 'not queried at this step'
+            if detection_frame is not None:
+                status = (
+                    f"{detection_frame['status']} | raw {len(detection_frame['boxes'])}"
+                    f" | mapped {len(detection_frame['mapped'])}"
+                )
+            cv2.putText(
+                frame, f'DINO: {status}', (8, self.rgb_size[1] - 10),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.50, (255, 255, 255), 1, cv2.LINE_AA,
+            )
         return frame
+
+    def _draw_groundingdino_boxes(self, frame, detection_frame, source_width: int, source_height: int):
+        if detection_frame is None:
+            return
+        scale_x = self.rgb_size[0] / source_width
+        scale_y = self.rgb_size[1] / source_height
+        mapped = detection_frame.get('classified') or detection_frame.get('mapped', ())
+        target = canonical_semantic_label(detection_frame.get('target_query', ''))
+        for box in detection_frame.get('boxes', ()):
+            coords = box.get('bbox_xyxy')
+            if coords is None:
+                continue
+            x_min, y_min, x_max, y_max = coords
+            classification = next((item for item in mapped
+                                   if item.get('proposal_source') == box.get('proposal_source')
+                                   and len(item.get('bbox_xyxy', ())) == 4
+                                   and np.allclose(item['bbox_xyxy'], coords)), None)
+            final_label = None if classification is None else classification.get('label')
+            color = (0, 0, 255) if final_label and canonical_semantic_label(final_label) == target else ((220, 60, 230) if box.get('above_threshold') else (150, 150, 150))
+            label = box['label'] if final_label is None or final_label == box['label'] else f"{box['label']} -> {final_label}"
+
+            start = (int(x_min * scale_x), int(y_min * scale_y))
+            end = (int(x_max * scale_x), int(y_max * scale_y))
+            cv2.rectangle(frame, start, end, color, 2)
+            cv2.putText(
+                frame,
+                f"{label} {box['confidence']:.2f}",
+                (start[0], max(42, start[1] - 4)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 1, cv2.LINE_AA,
+            )
 
     def _draw_camera_boxes(self, frame, camera, source_width: int, source_height: int):
         bounding_boxes = camera.get('bounding_box_2d_tight')
@@ -319,7 +442,7 @@ class InteractionVideoRecorder:
                 cv2.LINE_AA,
             )
 
-    def _render_map(self, step: int, state: str, interaction_observation, mapping_runtime):
+    def _render_map(self, step: int, state: str, interaction_observation, mapping_runtime, target_context=None):
         fused_map = mapping_runtime.map
         occupancy = fused_map.occupancy
         observed = occupancy.observed
@@ -438,6 +561,27 @@ class InteractionVideoRecorder:
 
         robot_pixel = self._world_to_pixel(interaction_observation.robot_position[:2], fused_map)
         cv2.circle(frame, robot_pixel, 11, (20, 230, 20), -1)
+        target_node = getattr(target_context, 'target_node', None)
+        target_cue = getattr(target_context, 'target_cue', None)
+        if target_node is None and target_cue is not None:
+            cue_pixel = self._world_to_pixel(target_cue.position[:2], fused_map)
+            cv2.drawMarker(frame, cue_pixel, (255, 80, 210), cv2.MARKER_DIAMOND, 23, 2, cv2.LINE_AA)
+            query = getattr(target_context.config, 'target_query', '')
+            self._put_label(frame, f'CUE: {query}',
+                            (cue_pixel[0] + 12, cue_pixel[1] - 8), (255, 80, 210), label_boxes)
+        if target_node is not None:
+            query = getattr(getattr(target_context, 'config', None), 'target_query', target_node.label)
+            target_pixel = self._world_to_pixel(target_node.position[:2], fused_map)
+            confirmed = bool(getattr(target_context, 'target_confirmed', False))
+            color = (0, 255, 255) if confirmed else (0, 180, 255)
+            cv2.circle(frame, target_pixel, 13, (0, 0, 0), 4, cv2.LINE_AA)
+            cv2.drawMarker(frame, target_pixel, color, cv2.MARKER_CROSS, 23, 3, cv2.LINE_AA)
+            label = f'{"TARGET" if confirmed else "CANDIDATE"}: {query}'
+            width, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)[0]
+            label_x = int(np.clip(target_pixel[0] + 16, 4, max(4, frame.shape[1] - width - 8)))
+            label_y = int(np.clip(target_pixel[1] - 10, 100, frame.shape[0] - 8))
+            cv2.putText(frame, label, (label_x, label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 5, cv2.LINE_AA)
+            cv2.putText(frame, label, (label_x, label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2, cv2.LINE_AA)
         stats = {
             'lidar_frames': fused_map.lidar_frames,
             'rgb_frames': fused_map.rgb_frames,

@@ -1,11 +1,13 @@
 """Isaac/GRUtopia runner for Unitree Go2 point navigation."""
 
 import json
+import logging
 import math
 import os
 import time
 import traceback
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence, Tuple
 
@@ -27,6 +29,9 @@ from grutopia_extension.configs.tasks import (
 )
 from grutopia_extension.interactive_navigation.scene_paths import (
     configure_scene_mdl_paths,
+)
+from grutopia_extension.interactive_navigation.mapping_runtime import (
+    SemanticDetectionMode,
 )
 from grutopia_extension.interactive_navigation.navigation_recording import (
     NavigationRecordingSession,
@@ -105,16 +110,28 @@ class Go2SemanticExplorationRunConfig:
     robot_usd_path: str = DEFAULT_GO2_USD_PATH
     generate_fallback_asset: bool = True
     ground_height: float = 0.0
-    enable_open_vocabulary: bool = True
+    # 'isaac' (ground-truth labels only), 'open_vocab' (VLM detections only),
+    # or 'hybrid' (fused). See SemanticDetectionMode.
+    semantic_detection_mode: str = 'open_vocab'
+    semantic_classifier: str = 'qwen-vl'
+    qwen_vl_url: str = 'http://localhost:12185/classify'
+    qwen_vl_timeout: float = 60.0
+    qwen_vl_max_candidates: int = 12
+    enable_target_cues: bool = True
     enable_qwen: bool = True
     qwen_model: str = 'Qwen/Qwen3-8B'
     qwen_python: str = os.environ.get('QWEN3_PYTHON', 'python'),
     rendering_interval: int = 4
     use_fabric: bool = False
+    verify_voronoi_incremental: bool = False
 
     def __post_init__(self):
         if not self.target_query.strip():
             raise ValueError('target_query cannot be empty')
+        if self.semantic_classifier not in ('qwen-vl', 'clip'):
+            raise ValueError('semantic_classifier must be qwen-vl or clip')
+        if self.qwen_vl_timeout <= 0 or self.qwen_vl_max_candidates < 1:
+            raise ValueError('VL timeout and candidate count must be positive')
         if min(self.gpu, self.perception_gpu) < 0:
             raise ValueError('GPU indices cannot be negative')
         if self.max_steps <= 0 or self.mapping_warmup_steps < 0:
@@ -123,6 +140,11 @@ class Go2SemanticExplorationRunConfig:
             raise ValueError('logging and recording intervals must be positive')
         if self.rendering_interval <= 0:
             raise ValueError('rendering_interval must be positive')
+        object.__setattr__(
+            self,
+            'semantic_detection_mode',
+            SemanticDetectionMode.parse(self.semantic_detection_mode).value,
+        )
 
 
 def build_go2_navigation_config(
@@ -352,37 +374,117 @@ def run_go2_semantic_exploration(
         SemanticExplorationComponent,
         SemanticExplorationConfig,
     )
-
-    runtime = SimulatorRuntime(
-        config_class=build_go2_navigation_config(
-            profile,
-            Go2NavigationRunConfig(
-                gpu=run.gpu,
-                headless=run.headless,
-                max_steps=run.max_steps,
-                mapping_warmup_steps=run.mapping_warmup_steps,
-                log_every=run.log_every,
-                record_dir=run.record_dir,
-                record_every=run.record_every,
-                video_fps=run.video_fps,
-                map_output=run.map_output,
-                policy_path=run.policy_path,
-                robot_usd_path=run.robot_usd_path,
-                generate_fallback_asset=run.generate_fallback_asset,
-                ground_height=run.ground_height,
-                rendering_interval=run.rendering_interval,
-                use_fabric=run.use_fabric,
-            ),
-            objects=objects,
-        ),
-        headless=run.headless,
-        active_gpu=run.gpu,
-        physics_gpu=run.gpu,
+    from grutopia_extension.interactive_navigation.semantic_run_summary import (
+        build_run_summary,
+        summary_path,
+        write_run_summary,
     )
-    configure_scene_mdl_paths(profile.scene_asset_path)
-    env = component = recorder = qwen_worker = None
+    from grutopia_extension.interactive_navigation.semantic_run_artifacts import (
+        SemanticRunArtifacts,
+    )
+    from grutopia_extension.interactive_navigation.semantic_voronoi import SemanticVoronoiConfig
+
+    # Isaac may enable root DEBUG logging; retain HTTP warnings without
+    # printing every GroundingDINO and MobileSAM request.
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    runtime = env = component = recorder = qwen_worker = perception = None
+    robot_observation = None
     result_code = 2
+    terminal_result = None
+    last_step = None
+    stop_reason = 'incomplete'
+    error_type = None
+    artifacts = SemanticRunArtifacts(run.record_dir, run, profile) if run.record_dir else None
+    run_summary_path = summary_path(run.record_dir, run.map_output)
+    if run_summary_path is not None:
+        write_run_summary(
+            run_summary_path,
+            {
+                'schema_version': 2,
+                'status': 'running',
+                'completion_recorded': False,
+                'run_id': None if artifacts is None else artifacts.run_id,
+                'started_at': None if artifacts is None else artifacts.started_at,
+                'target_query': run.target_query,
+                'detection_mode': run.semantic_detection_mode,
+                'max_steps': run.max_steps,
+            },
+        )
     try:
+        detection_mode = SemanticDetectionMode.parse(run.semantic_detection_mode)
+        perception_startup_error = None
+        if detection_mode.uses_open_vocabulary:
+            perception = OpenVocabularyPerception(
+                OpenVocabularyPerceptionConfig(
+                    clip_device=f'cuda:{run.perception_gpu}',
+                    query_interval=0.25,
+                    request_timeout=8.0,
+                    semantic_classifier=run.semantic_classifier,
+                    qwen_vl_url=run.qwen_vl_url,
+                    qwen_vl_timeout=run.qwen_vl_timeout,
+                    qwen_vl_max_candidates=run.qwen_vl_max_candidates,
+                )
+            )
+            try:
+                readiness = perception.check_ready()
+            except Exception as error:
+                perception_startup_error = f'{type(error).__name__}: {error}'
+                if detection_mode is SemanticDetectionMode.OPEN_VOCABULARY:
+                    raise RuntimeError(
+                        'open_vocab requires ready GroundingDINO, MobileSAM, '
+                        f'and {run.semantic_classifier} before the run starts: {type(error).__name__}: {error}'
+                    ) from error
+                print(
+                    json.dumps(
+                        {
+                            'event': 'open_vocabulary_preflight_failed',
+                            'mode': detection_mode.value,
+                            'type': type(error).__name__,
+                            'message': str(error),
+                            'fallback': 'isaac',
+                        }
+                    ),
+                    flush=True,
+                )
+                perception = None
+            else:
+                print(
+                    json.dumps(
+                        {
+                            'event': 'open_vocabulary_ready',
+                            'mode': detection_mode.value,
+                            **readiness,
+                        }
+                    ),
+                    flush=True,
+                )
+        runtime = SimulatorRuntime(
+            config_class=build_go2_navigation_config(
+                profile,
+                Go2NavigationRunConfig(
+                    gpu=run.gpu,
+                    headless=run.headless,
+                    max_steps=run.max_steps,
+                    mapping_warmup_steps=run.mapping_warmup_steps,
+                    log_every=run.log_every,
+                    record_dir=run.record_dir,
+                    record_every=run.record_every,
+                    video_fps=run.video_fps,
+                    map_output=run.map_output,
+                    policy_path=run.policy_path,
+                    robot_usd_path=run.robot_usd_path,
+                    generate_fallback_asset=run.generate_fallback_asset,
+                    ground_height=run.ground_height,
+                    rendering_interval=run.rendering_interval,
+                    use_fabric=run.use_fabric,
+                ),
+                objects=objects,
+            ),
+            headless=run.headless,
+            active_gpu=run.gpu,
+            physics_gpu=run.gpu,
+        )
+        configure_scene_mdl_paths(profile.scene_asset_path)
         import_extensions(('controllers', 'objects', 'robots', 'sensors', 'tasks'))
         env = Env(runtime)
         robot_observation, _ = env.reset()
@@ -407,15 +509,6 @@ def run_go2_semantic_exploration(
         _label_go2_and_household_semantics(profile, active_robot.config.prim_path)
         _apply_high_friction_material('/World/env_0/objects/grscene_go2_floor')
 
-        perception = None
-        if run.enable_open_vocabulary:
-            perception = OpenVocabularyPerception(
-                OpenVocabularyPerceptionConfig(
-                    clip_device=f'cuda:{run.perception_gpu}',
-                    query_interval=0.25,
-                    request_timeout=8.0,
-                )
-            )
         scorer = None
         if run.enable_qwen:
             worker_script = (
@@ -454,16 +547,32 @@ def run_go2_semantic_exploration(
             SemanticExplorationConfig(
                 target_query=run.target_query,
                 mapping=profile.mapping,
+                voronoi=SemanticVoronoiConfig(
+                    verify_incremental=run.verify_voronoi_incremental,
+                ),
                 max_steps=run.max_steps,
                 target_distance=profile.success_distance,
                 fall_height=profile.fall_height,
                 safe_base_height=profile.safe_base_height,
                 max_forward_speed=profile.max_forward_speed,
                 max_lateral_speed=profile.max_lateral_speed,
+                semantic_detection_mode=detection_mode.value,
+                target_semantic_classifier=run.semantic_classifier if perception is not None else 'clip',
+                enable_target_cues=run.enable_target_cues,
+                open_vocabulary_startup_error=perception_startup_error,
             ),
             perception=perception,
             scorer=scorer,
         )
+        if artifacts is not None:
+            health = (
+                {} if perception is None else
+                getattr(perception.detector, 'last_health_payloads', {})
+            )
+            artifacts.set_runtime_details(
+                component, perception=perception, services=health,
+                qwen_active=scorer is not None,
+            )
         # Boxes are kept for collision statistics only: the exploration map
         # must start empty and grow purely from online sensing.
         component.mapping.seed_static_obstacles(
@@ -519,6 +628,7 @@ def run_go2_semantic_exploration(
                 'steps': 0,
             }
         for step in range(run.max_steps):
+            last_step = step
             t0 = time.perf_counter() if timing is not None else 0.0
             sensor_rig.update(
                 step,
@@ -526,8 +636,19 @@ def run_go2_semantic_exploration(
                 force_capture=recorder is not None and step % run.record_every == 0,
             )
             t1 = time.perf_counter() if timing is not None else 0.0
-            component.update(step, robot_observation)
+            try:
+                component.update(step, robot_observation)
+            finally:
+                # Preserve the detector response even if this update ends the run.
+                if recorder is not None:
+                    recorder.record_perception(step, robot_observation, component.mapping)
             t2 = time.perf_counter() if timing is not None else 0.0
+            if artifacts is not None:
+                artifacts.observe(
+                    step, component, robot_observation,
+                    sample=step % run.record_every == 0,
+                    heartbeat=step % run.log_every == 0,
+                )
             if step % run.log_every == 0:
                 print(
                     json.dumps(component.progress_event(step, robot_observation)),
@@ -544,11 +665,15 @@ def run_go2_semantic_exploration(
             t3 = time.perf_counter() if timing is not None else 0.0
             result = component.evaluate(step, robot_observation)
             if result.terminal:
+                terminal_result = result
+                stop_reason = 'goal_reached' if result.success else (result.failure_reason or 'failed')
                 print(json.dumps(result.as_event()), flush=True)
                 result_code = 0 if result.success else 2
                 break
             t4 = time.perf_counter() if timing is not None else 0.0
             action = component.action(step, robot_observation)
+            if artifacts is not None:
+                artifacts.observe_plans(step, component)
             t5 = time.perf_counter() if timing is not None else 0.0
             robot_observation, _, terminated, _, _ = env.step(action)
             if timing is not None:
@@ -564,30 +689,74 @@ def run_go2_semantic_exploration(
                     print(json.dumps({'event': 'step_timing', **{k: round(v, 2) for k, v in timing.items()}}), flush=True)
             if terminated:
                 raise RuntimeError('task terminated during Go2 semantic exploration')
+    except KeyboardInterrupt:
+        stop_reason = 'interrupted'
+        result_code = 130
+        print(json.dumps({'event': 'semantic_exploration_stopped', 'reason': stop_reason, 'step': last_step}), flush=True)
     except Exception as error:
+        error_type = type(error).__name__
+        stop_reason = 'exception'
         traceback.print_exc()
         print(
             json.dumps(
                 {
                     'event': 'semantic_exploration_error',
-                    'robot': 'go2',
-                    'type': type(error).__name__,
+                    'type': error_type,
                     'message': str(error),
                 }
             ),
             flush=True,
         )
     finally:
-        if recorder is not None:
-            recorder.close()
-        if component is not None:
-            component.save(run.map_output)
-        if qwen_worker is not None:
-            qwen_worker.close()
-        if env is not None:
-            env.close()
-        else:
-            runtime.simulation_app.close()
+        artifact_errors = []
+        for name, cleanup in (
+            ('trace', None if artifacts is None else lambda: artifacts.finish(last_step, component, robot_observation)),
+            ('video', None if recorder is None else recorder.close),
+            ('final_map', None if component is None else lambda: component.save(run.map_output)),
+        ):
+            if cleanup is None:
+                continue
+            try:
+                cleanup()
+            except Exception as cleanup_error:
+                traceback.print_exc()
+                artifact_errors.append({'artifact': name, 'error': type(cleanup_error).__name__})
+        try:
+            if run_summary_path is not None:
+                summary = build_run_summary(
+                    target_query=run.target_query,
+                    detection_mode=run.semantic_detection_mode,
+                    max_steps=run.max_steps,
+                    profile_goal=profile.goals[0] if profile.goals else None,
+                    component=component,
+                    terminal_result=terminal_result,
+                    step=last_step,
+                    robot_observation=robot_observation,
+                    stop_reason=stop_reason,
+                    error_type=error_type,
+                    exit_code=result_code,
+                )
+                summary.update({
+                    'completion_recorded': True,
+                    'run_id': None if artifacts is None else artifacts.run_id,
+                    'started_at': None if artifacts is None else artifacts.started_at,
+                    'finished_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+                    'artifacts_complete': not artifact_errors,
+                    'artifact_errors': artifact_errors,
+                })
+                write_run_summary(run_summary_path, summary)
+        finally:
+            for cleanup in (
+                None if qwen_worker is None else qwen_worker.close,
+                env.close if env is not None else (
+                    None if runtime is None else runtime.simulation_app.close
+                ),
+            ):
+                if cleanup is not None:
+                    try:
+                        cleanup()
+                    except Exception:
+                        traceback.print_exc()
     return result_code
 
 

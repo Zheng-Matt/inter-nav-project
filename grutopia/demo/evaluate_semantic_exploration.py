@@ -46,13 +46,23 @@ def evaluate(prefix: Path, target_label='', expected_target=None, max_target_err
     matched_target = None
     if target_label:
         normalized = target_label.casefold().replace(' ', '_')
+        graph = metadata.get('scene_graph', {})
+        label_counts = graph.get('label_counts', {})
         candidates = [
             node
-            for node in metadata.get('scene_graph', {}).get('nodes', [])
+            for node in graph.get('nodes', [])
             if normalized in node.get('label', '').casefold().replace(' ', '_')
+            or any(
+                normalized in label.casefold().replace(' ', '_') and count > 0
+                for label, count in label_counts.get(node['node_id'], {}).items()
+            )
         ]
         if candidates:
-            matched_target = max(candidates, key=lambda node: node.get('observations', 0))
+            selected_id = metadata.get('semantic_exploration', {}).get('statistics', {}).get('target_node')
+            matched_target = next(
+                (node for node in candidates if node['node_id'] == selected_id),
+                None,
+            ) or max(candidates, key=lambda node: node.get('observations', 0))
     if matched_target is not None and expected_target is not None:
         target_error = float(
             np.linalg.norm(
@@ -88,7 +98,15 @@ def evaluate(prefix: Path, target_label='', expected_target=None, max_target_err
             'invalid_edges': invalid_edges,
             'target_error_metres': target_error,
         },
-        'target': matched_target,
+        'target': None if matched_target is None else {
+            key: matched_target[key]
+            for key in ('node_id', 'label', 'position', 'observations')
+            if key in matched_target
+        } | {
+            'label_counts': metadata.get('scene_graph', {}).get('label_counts', {}).get(
+                matched_target['node_id'], {}
+            ),
+        },
     }
     return report, metadata, arrays
 
@@ -218,6 +236,29 @@ def render_diagnostic(metadata, arrays, output: Path):
             continue
         middle = edge['cells'][len(edge['cells']) // 2]
         cv2.drawMarker(frame, to_pixel(middle), (255, 255, 255), cv2.MARKER_DIAMOND, 3 * scale, 2)
+
+    semantic = metadata.get('semantic_exploration', {})
+    target_id = semantic.get('statistics', {}).get('target_node')
+    target_node = next(
+        (node for node in metadata.get('scene_graph', {}).get('nodes', []) if node.get('node_id') == target_id),
+        None,
+    ) if target_id else None
+    if target_node is not None:
+        config = metadata['mapping_config']
+        resolution = config['grid_resolution']
+        x, y = target_node['position'][:2]
+        col = int(np.floor((x - config['x_limits'][0]) / resolution))
+        row = int(np.floor((y - config['y_limits'][0]) / resolution))
+        if 0 <= row < observed.shape[0] and 0 <= col < observed.shape[1]:
+            pixel = to_pixel((row, col))
+            cv2.drawMarker(frame, pixel, (0, 255, 255), cv2.MARKER_CROSS, 4 * scale, 2)
+            state = 'TARGET' if semantic.get('statistics', {}).get('target_confirmed') else 'CANDIDATE'
+            label = f"{state}: {semantic.get('target_query', target_node['label'])}"
+            width = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)[0][0]
+            label_x = min(pixel[0] + 2 * scale, max(5, frame.shape[1] - width - 5))
+            label_y = max(52, pixel[1] - scale)
+            cv2.putText(frame, label, (label_x, label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 0), 4, cv2.LINE_AA)
+            cv2.putText(frame, label, (label_x, label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2, cv2.LINE_AA)
 
     cv2.rectangle(frame, (0, 0), (frame.shape[1], 32), (0, 0, 0), -1)
     cv2.putText(
