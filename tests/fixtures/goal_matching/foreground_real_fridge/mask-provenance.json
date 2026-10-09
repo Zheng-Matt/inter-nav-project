@@ -16,7 +16,8 @@
       127,
       127,
       127
-    ]
+    ],
+    "context_crop": "../clean_real_fridge/fridge_000024.png"
   },
   {
     "crop": "fridge_000192.png",
@@ -35,7 +36,8 @@
       127,
       127,
       127
-    ]
+    ],
+    "context_crop": "../clean_real_fridge/fridge_000192.png"
   },
   {
     "crop": "floor_000192.png",
@@ -54,7 +56,8 @@
       127,
       127,
       127
-    ]
+    ],
+    "context_crop": "../clean_real_fridge/floor_000192.png"
   },
   {
     "crop": "fridge_000096.png",
@@ -73,7 +76,8 @@
       127,
       127,
       127
-    ]
+    ],
+    "context_crop": "../clean_real_fridge/fridge_000096.png"
   },
   {
     "crop": "fridge_000240.png",
@@ -92,7 +96,8 @@
       127,
       127,
       127
-    ]
+    ],
+    "context_crop": "../clean_real_fridge/fridge_000240.png"
   },
   {
     "crop": "floor_000240.png",
@@ -111,6 +116,7 @@
       127,
       127,
       127
-    ]
+    ],
+    "context_crop": "floor_000240.png"
   }
 ]

@@ -13,7 +13,7 @@
           445.93426513671875,
           243.16941833496094
         ],
-        "crop": "fridge_000096.png"
+        "crop": "../clean_real_fridge/fridge_000096.png"
       },
       {
         "step": 240,
@@ -24,7 +24,7 @@
           607.3229370117188,
           250.6773223876953
         ],
-        "crop": "fridge_000240.png"
+        "crop": "../clean_real_fridge/fridge_000240.png"
       },
       {
         "step": 240,
@@ -51,7 +51,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000096.png",
+          "crop": "../clean_real_fridge/fridge_000096.png",
           "masked_crop": "masked_fridge_000096.png"
         }
       ]
@@ -65,7 +65,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000096.png",
+          "crop": "../clean_real_fridge/fridge_000096.png",
           "masked_crop": "masked_fridge_000096.png"
         }
       ]
@@ -79,7 +79,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000096.png",
+          "crop": "../clean_real_fridge/fridge_000096.png",
           "masked_crop": "masked_fridge_000096.png"
         }
       ]
@@ -93,7 +93,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000096.png",
+          "crop": "../clean_real_fridge/fridge_000096.png",
           "masked_crop": "masked_fridge_000096.png"
         }
       ]
@@ -107,7 +107,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000096.png",
+          "crop": "../clean_real_fridge/fridge_000096.png",
           "masked_crop": "masked_fridge_000096.png"
         }
       ]
@@ -121,7 +121,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000096.png",
+          "crop": "../clean_real_fridge/fridge_000096.png",
           "masked_crop": "masked_fridge_000096.png"
         }
       ]
@@ -135,7 +135,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000096.png",
+          "crop": "../clean_real_fridge/fridge_000096.png",
           "masked_crop": "masked_fridge_000096.png"
         }
       ]
@@ -149,7 +149,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000096.png",
+          "crop": "../clean_real_fridge/fridge_000096.png",
           "masked_crop": "masked_fridge_000096.png"
         }
       ]
@@ -163,7 +163,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000096.png",
+          "crop": "../clean_real_fridge/fridge_000096.png",
           "masked_crop": "masked_fridge_000096.png"
         }
       ]
@@ -177,7 +177,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000240.png",
+          "crop": "../clean_real_fridge/fridge_000240.png",
           "masked_crop": "masked_fridge_000240.png"
         }
       ]
@@ -191,7 +191,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000240.png",
+          "crop": "../clean_real_fridge/fridge_000240.png",
           "masked_crop": "masked_fridge_000240.png"
         }
       ]
@@ -205,7 +205,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000240.png",
+          "crop": "../clean_real_fridge/fridge_000240.png",
           "masked_crop": "masked_fridge_000240.png"
         }
       ]
@@ -219,7 +219,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000240.png",
+          "crop": "../clean_real_fridge/fridge_000240.png",
           "masked_crop": "masked_fridge_000240.png"
         }
       ]
@@ -233,7 +233,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000240.png",
+          "crop": "../clean_real_fridge/fridge_000240.png",
           "masked_crop": "masked_fridge_000240.png"
         }
       ]
@@ -247,7 +247,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000240.png",
+          "crop": "../clean_real_fridge/fridge_000240.png",
           "masked_crop": "masked_fridge_000240.png"
         }
       ]
@@ -261,7 +261,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000240.png",
+          "crop": "../clean_real_fridge/fridge_000240.png",
           "masked_crop": "masked_fridge_000240.png"
         }
       ]
@@ -275,7 +275,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000240.png",
+          "crop": "../clean_real_fridge/fridge_000240.png",
           "masked_crop": "masked_fridge_000240.png"
         }
       ]
@@ -289,7 +289,7 @@
         {
           "id": "fridge",
           "label": "unknown",
-          "crop": "fridge_000240.png",
+          "crop": "../clean_real_fridge/fridge_000240.png",
           "masked_crop": "masked_fridge_000240.png"
         }
       ]

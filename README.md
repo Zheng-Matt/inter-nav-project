@@ -158,10 +158,11 @@ Description scores are accumulated separately from category votes. An older
 Qwen service without verification fields cannot confirm a description.
 Use `--goal-matching legacy` for the original baseline. Configuration, CPU
 checks and experiment output paths are documented in
-the [goal matching report](docs/reports/open-vocabulary-goal-matching-2026-10-09.md).
-The [GPU 0 smoke report](docs/reports/open-vocabulary-goal-matching-smoke-2026-10-09.md)
-records passed synonym/functional queries and unresolved attribute, temporal
-confirmation, and navigation arrival failures; full online validation is pending.
+the [goal matching guide](docs/en/get_started/goal-matching.md).
+The guide separates rule checks, real model crop comparisons, and single-asset
+navigation results. Complete-house description navigation remains unverified;
+historical reports and full outputs are linked in the
+[experiment archive](docs/reports/assets/ARCHIVED_GOAL_MATCHING_RESULTS.md).
 
 A finished run prints `semantic_exploration_result` with `"success": true`
 and writes to a new timestamped directory under `grutopia/results/`:
@@ -188,7 +189,7 @@ python grutopia/demo/summarize_semantic_runs.py grutopia/results \
 
 For staged offline, geometry-only, and fused semantic validation, follow the
 [navigation and semantic regression test plan](docs/navigation-semantic-regression-test-plan.md).
-The [September 19–25 navigation report](docs/reports/go2-open-vocabulary-weekly-2026-09-19-to-25.md)
+The [earlier navigation report](https://github.com/Zheng-Matt/inter-nav-project/blob/012a47e2fb3f9ba3c931d50fdefe9ac6112ee79e/docs/reports/go2-open-vocabulary-weekly-2026-09-19-to-25.md)
 compares the earlier failures with the label-fusion rerun.
 
 ## Architecture
@@ -196,7 +197,8 @@ compares the earlier failures with the label-fusion rerun.
 1. `SemanticVoronoiGraph` builds a safe medial-axis skeleton on observed free
    space, plus room-like regions and doorways.
 2. `OpenVocabularyPerception` sends RGB to GroundingDINO + MobileSAM, then
-   Qwen3-VL-8B-Instruct classifies marked context crops. The legacy CLIP mode
+   Qwen3-VL-8B-Instruct classifies marked crops with masked foreground by default.
+   The legacy CLIP mode
    remains available through `--semantic-classifier clip`. `--detection-mode` picks between these detections,
    the Isaac simulator labels, or a fusion of both.
 3. `AdaptiveExplorationPlanner` ranks frontiers. A local Qwen3-8B worker may
