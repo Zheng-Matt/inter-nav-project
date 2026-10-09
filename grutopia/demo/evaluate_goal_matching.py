@@ -26,6 +26,8 @@ def parse_args():
     )
     parser.add_argument('--record-dir', type=Path)
     parser.add_argument('--live-qwen-url', help='Optional /classify URL; requires annotated red-box crops.')
+    parser.add_argument('--qwen-vl-crop-mode', choices=('context', 'masked'), default='context',
+                        help='Robust live evaluation can use candidate masked_crop; legacy keeps crop.')
     parser.add_argument('--description-threshold', type=float, default=0.80)
     parser.add_argument('--matching-repeats', type=int, default=100)
     parser.add_argument('--worker', choices=('legacy', 'robust'), help=argparse.SUPPRESS)
@@ -98,7 +100,8 @@ def worker(args):
             if args.live_qwen_url:
                 import cv2
 
-                image_path = (args.dataset.parent / candidate['crop']).resolve()
+                crop_key = 'masked_crop' if args.worker == 'robust' and args.qwen_vl_crop_mode == 'masked' else 'crop'
+                image_path = (args.dataset.parent / candidate[crop_key]).resolve()
                 crop = cv2.imread(str(image_path))
                 if crop is None:
                     raise ValueError(f'cannot read annotated crop {image_path}')
@@ -214,6 +217,7 @@ def main():
             command += ['--baseline-root', str(args.baseline_root)]
         if args.live_qwen_url:
             command += ['--live-qwen-url', args.live_qwen_url]
+        command += ['--qwen-vl-crop-mode', args.qwen_vl_crop_mode]
         result = subprocess.run(
             command,
             check=True,
@@ -227,6 +231,7 @@ def main():
         schema_version=1,
         scope='single-observation object matching; no navigation evaluation',
         evidence_kind='live-human-annotated-crops' if args.live_qwen_url else 'scripted-contracts',
+        candidate_views={'legacy': 'context', 'robust': args.qwen_vl_crop_mode},
         dataset_provenance=dataset.get('provenance'),
         dataset_sha256=hashlib.sha256(args.dataset.read_bytes()).hexdigest(),
         python=sys.version,
