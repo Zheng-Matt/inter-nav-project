@@ -1,0 +1,389 @@
+{
+  "frames": 32,
+  "ground_rejections": 19,
+  "classifier_calls": 32,
+  "rejections": [
+    {
+      "step": 0,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.0,
+            163.5989227294922,
+            639.8167724609375,
+            359.7525634765625
+          ],
+          "raw_label": "table",
+          "reason": "ground_surface",
+          "proposal_source": "context"
+        }
+      ]
+    },
+    {
+      "step": 24,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.039539337158203125,
+            164.33473205566406,
+            639.9232177734375,
+            359.6617431640625
+          ],
+          "raw_label": "large app",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 72,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.0,
+            163.70602416992188,
+            639.9408569335938,
+            359.7119445800781
+          ],
+          "raw_label": "large app",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 192,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.0025177001953125,
+            163.2460174560547,
+            639.983642578125,
+            359.88922119140625
+          ],
+          "raw_label": "large app",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 216,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.01651763916015625,
+            162.30072021484375,
+            640.0,
+            359.935791015625
+          ],
+          "raw_label": "large app",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 240,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.0165557861328125,
+            162.0837860107422,
+            640.0,
+            359.9356994628906
+          ],
+          "raw_label": "large app",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 288,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.12325286865234375,
+            162.21612548828125,
+            640.0,
+            359.82769775390625
+          ],
+          "raw_label": "large app",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 312,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.0,
+            161.7202911376953,
+            639.9615478515625,
+            359.8384094238281
+          ],
+          "raw_label": "a large app to",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 336,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.0,
+            161.3756866455078,
+            639.7911376953125,
+            359.671875
+          ],
+          "raw_label": "a large app to",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 360,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.02124786376953125,
+            161.48831176757812,
+            640.0,
+            359.7607727050781
+          ],
+          "raw_label": "a large app to",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 384,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.0653076171875,
+            161.29635620117188,
+            640.0,
+            359.81378173828125
+          ],
+          "raw_label": "a large app to",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 408,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.04261016845703125,
+            161.42337036132812,
+            640.0,
+            359.8232727050781
+          ],
+          "raw_label": "a large app to",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 432,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.05321502685546875,
+            161.93653869628906,
+            640.0,
+            359.7740478515625
+          ],
+          "raw_label": "a large app to",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 456,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.04810333251953125,
+            162.1654052734375,
+            640.0,
+            359.76995849609375
+          ],
+          "raw_label": "a large app to",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 480,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.0920867919921875,
+            162.1397705078125,
+            640.0,
+            359.8006896972656
+          ],
+          "raw_label": "a large app to",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 504,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.06267547607421875,
+            162.3686981201172,
+            640.0,
+            359.74163818359375
+          ],
+          "raw_label": "a large app to",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 528,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.0,
+            162.43995666503906,
+            639.982421875,
+            359.7499694824219
+          ],
+          "raw_label": "a large app",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 552,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.03101348876953125,
+            162.91156005859375,
+            640.0,
+            359.7489318847656
+          ],
+          "raw_label": "large app",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    },
+    {
+      "step": 624,
+      "candidates": [
+        {
+          "bbox_xyxy": [
+            0.035858154296875,
+            163.5207977294922,
+            640.0,
+            359.79193115234375
+          ],
+          "raw_label": "large app",
+          "reason": "ground_surface",
+          "proposal_source": "target"
+        }
+      ]
+    }
+  ],
+  "object_nodes": [
+    {
+      "node_id": "object:refrigerator:0",
+      "kind": "object",
+      "position": [
+        10.52864400545756,
+        -1.6804984509944916,
+        0.7607631261150042
+      ],
+      "label": "refrigerator",
+      "color": null,
+      "observations": 24,
+      "confidence": 0.4255423756937186,
+      "embedding": null,
+      "point_count": 1112850,
+      "last_seen_step": 744,
+      "sources": [
+        "open_vocabulary",
+        "qwen_vl"
+      ]
+    },
+    {
+      "node_id": "object:cabinet:1",
+      "kind": "object",
+      "position": [
+        10.586232662200928,
+        -1.5166467428207397,
+        0.6862322390079498
+      ],
+      "label": "cabinet",
+      "color": null,
+      "observations": 2,
+      "confidence": 0.40744344890117645,
+      "embedding": null,
+      "point_count": 88528,
+      "last_seen_step": 576,
+      "sources": [
+        "open_vocabulary",
+        "qwen_vl"
+      ]
+    }
+  ],
+  "goal_match_evidence": {
+    "object:refrigerator:0": {
+      "a large appliance used to keep food cold": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        0.9,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "object:cabinet:1": {
+      "a large appliance used to keep food cold": [
+        0.0,
+        0.0
+      ]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+[minimal-masked]
+2026-10-09 12:31:00 [7,229ms] [Error] [carb.cudainterop.plugin] CUDA error 101: cudaErrorInvalidDevice - invalid device ordinal)
+2026-10-09 12:31:00 [7,229ms] [Error] [omni.physx.plugin] Unable to create PxCudaContextManager!
+2026-10-09 12:31:04 [11,935ms] [Error] [carb.cudainterop.plugin] CUDA error 101: cudaErrorInvalidDevice - invalid device ordinal)
+2026-10-09 12:31:04 [11,935ms] [Error] [omni.physx.plugin] Unable to create PxCudaContextManager!
+2026-10-09 12:32:22 [89,976ms] [Error] [carb.cudainterop.plugin] CUDA error 101: cudaErrorInvalidDevice - invalid device ordinal)
+2026-10-09 12:32:22 [89,976ms] [Error] [omni.physx.plugin] Unable to create PxCudaContextManager!
+
+[full-masked]
+2026-10-09 12:36:21 [7,254ms] [Error] [carb.cudainterop.plugin] CUDA error 101: cudaErrorInvalidDevice - invalid device ordinal)
+2026-10-09 12:36:21 [7,254ms] [Error] [omni.physx.plugin] Unable to create PxCudaContextManager!
+2026-10-09 12:37:45 [91,204ms] [Error] [carb.cudainterop.plugin] CUDA error 101: cudaErrorInvalidDevice - invalid device ordinal)
+2026-10-09 12:37:45 [91,204ms] [Error] [omni.physx.plugin] Unable to create PxCudaContextManager!
+
+[minimal-masked-fixed]
+ConnectionRefusedError: [Errno 111] Connection refused
+urllib3.exceptions.NewConnectionError: <urllib3.connection.HTTPConnection object at 0x7ff6cc3669e0>: Failed to establish a new connection: [Errno 111] Connection refused
+urllib3.exceptions.MaxRetryError: HTTPConnectionPool(host='127.0.0.1', port=12188): Max retries exceeded with url: /health (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7ff6cc3669e0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+requests.exceptions.ConnectionError: HTTPConnectionPool(host='127.0.0.1', port=12188): Max retries exceeded with url: /health (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7ff6cc3669e0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+RuntimeError: open_vocab requires ready GroundingDINO, MobileSAM, and qwen-vl before the run starts: ConnectionError: HTTPConnectionPool(host='127.0.0.1', port=12188): Max retries exceeded with url: /health (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7ff6cc3669e0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+{"event": "semantic_exploration_error", "type": "RuntimeError", "message": "open_vocab requires ready GroundingDINO, MobileSAM, and qwen-vl before the run starts: ConnectionError: HTTPConnectionPool(host='127.0.0.1', port=12188): Max retries exceeded with url: /health (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7ff6cc3669e0>: Failed to establish a new connection: [Errno 111] Connection refused'))"}
+{"event": "diagnostic_main_return", "return_code": 2}

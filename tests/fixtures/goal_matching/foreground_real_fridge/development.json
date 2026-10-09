@@ -1,0 +1,326 @@
+{
+  "provenance": {
+    "kind": "human annotated raw simulation RGB",
+    "runtime_commit": "0eeb29b006bee4c6eefb823a060892a164a6e582",
+    "annotation": "One real GRScene refrigerator asset: gray-brown double doors, white control panel; red/blue/white dominant colors and chair/bed relation are not satisfied. Two camera frames, not independent instances.",
+    "sources": [
+      {
+        "step": 24,
+        "source_sha256": "25060ae03315b3f6e017f6869c9aee1b26c6c940c065e5fad35754dce5c2f857",
+        "bbox_xyxy": [
+          258.1963195800781,
+          0.0,
+          403.38177490234375,
+          244.81015014648438
+        ],
+        "crop": "fridge_000024.png"
+      },
+      {
+        "step": 192,
+        "source_sha256": "ba5fbe419ea078e5febf330fd053d3145fd782e0116a17281afbe5a9b201f8ad",
+        "bbox_xyxy": [
+          354.8863525390625,
+          0.0,
+          521.3985595703125,
+          248.4917449951172
+        ],
+        "crop": "fridge_000192.png"
+      },
+      {
+        "step": 192,
+        "bbox_xyxy": [
+          0.0064849853515625,
+          163.2337646484375,
+          639.9837646484375,
+          359.9454650878906
+        ],
+        "crop": "floor_000192.png",
+        "annotation": "Main outlined region is floor, with a partial fridge in context; not a refrigerator candidate."
+      }
+    ],
+    "dataset_role": "development",
+    "mask_processing": "Existing SAM mask; pixels outside mask replaced with neutral RGB 127; default context dimensions and red box unchanged. No manually drawn masks or simulator labels."
+  },
+  "cases": [
+    {
+      "id": "frame24-query0",
+      "query": "refrigerator",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000024.png",
+          "masked_crop": "masked_fridge_000024.png"
+        }
+      ]
+    },
+    {
+      "id": "frame24-query1",
+      "query": "fridge",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000024.png",
+          "masked_crop": "masked_fridge_000024.png"
+        }
+      ]
+    },
+    {
+      "id": "frame24-query2",
+      "query": "a large appliance used to keep food cold",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000024.png",
+          "masked_crop": "masked_fridge_000024.png"
+        }
+      ]
+    },
+    {
+      "id": "frame24-query3",
+      "query": "a gray-brown refrigerator",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000024.png",
+          "masked_crop": "masked_fridge_000024.png"
+        }
+      ]
+    },
+    {
+      "id": "frame24-query4",
+      "query": "a red refrigerator",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000024.png",
+          "masked_crop": "masked_fridge_000024.png"
+        }
+      ]
+    },
+    {
+      "id": "frame24-query5",
+      "query": "a bright blue refrigerator",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000024.png",
+          "masked_crop": "masked_fridge_000024.png"
+        }
+      ]
+    },
+    {
+      "id": "frame24-query6",
+      "query": "a white refrigerator",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000024.png",
+          "masked_crop": "masked_fridge_000024.png"
+        }
+      ]
+    },
+    {
+      "id": "frame24-query7",
+      "query": "a chair for sitting",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000024.png",
+          "masked_crop": "masked_fridge_000024.png"
+        }
+      ]
+    },
+    {
+      "id": "frame24-query8",
+      "query": "the refrigerator beside a bed",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000024.png",
+          "masked_crop": "masked_fridge_000024.png"
+        }
+      ]
+    },
+    {
+      "id": "frame192-query0",
+      "query": "refrigerator",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000192.png",
+          "masked_crop": "masked_fridge_000192.png"
+        }
+      ]
+    },
+    {
+      "id": "frame192-query1",
+      "query": "fridge",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000192.png",
+          "masked_crop": "masked_fridge_000192.png"
+        }
+      ]
+    },
+    {
+      "id": "frame192-query2",
+      "query": "a large appliance used to keep food cold",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000192.png",
+          "masked_crop": "masked_fridge_000192.png"
+        }
+      ]
+    },
+    {
+      "id": "frame192-query3",
+      "query": "a gray-brown refrigerator",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000192.png",
+          "masked_crop": "masked_fridge_000192.png"
+        }
+      ]
+    },
+    {
+      "id": "frame192-query4",
+      "query": "a red refrigerator",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000192.png",
+          "masked_crop": "masked_fridge_000192.png"
+        }
+      ]
+    },
+    {
+      "id": "frame192-query5",
+      "query": "a bright blue refrigerator",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000192.png",
+          "masked_crop": "masked_fridge_000192.png"
+        }
+      ]
+    },
+    {
+      "id": "frame192-query6",
+      "query": "a white refrigerator",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000192.png",
+          "masked_crop": "masked_fridge_000192.png"
+        }
+      ]
+    },
+    {
+      "id": "frame192-query7",
+      "query": "a chair for sitting",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000192.png",
+          "masked_crop": "masked_fridge_000192.png"
+        }
+      ]
+    },
+    {
+      "id": "frame192-query8",
+      "query": "the refrigerator beside a bed",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000192.png",
+          "masked_crop": "masked_fridge_000192.png"
+        }
+      ]
+    },
+    {
+      "id": "floor-18",
+      "query": "fridge",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "floor",
+          "label": "unknown",
+          "crop": "floor_000192.png",
+          "masked_crop": "masked_floor_000192.png"
+        }
+      ]
+    },
+    {
+      "id": "floor-19",
+      "query": "a large appliance used to keep food cold",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "floor",
+          "label": "unknown",
+          "crop": "floor_000192.png",
+          "masked_crop": "masked_floor_000192.png"
+        }
+      ]
+    }
+  ]
+}

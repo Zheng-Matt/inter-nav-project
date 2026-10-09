@@ -1,5 +1,7 @@
 # Open-vocabulary goal matching：GPU 5/7 续测与在线验证（2026-10-09）
 
+后续针对本报告中的地面背景误匹配已实现前景掩码和几何过滤，新增实测与限制见[前景掩码续测报告](open-vocabulary-goal-matching-mask-2026-10-09.md)。以下保留本轮当时的原始结果。
+
 [Draft PR #1](https://github.com/Zheng-Matt/inter-nav-project/pull/1)。最终核验提示的最小真实资产在线导航 **PASS**：第 767 步到达，23 次描述正证据，32 次在线感知无失败。完整房屋场景未完成初始化；本报告不把单物体 smoke 等同于完整导航基准。
 
 ## 代码、路径与资源隔离

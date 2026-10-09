@@ -1,0 +1,116 @@
+[
+  {
+    "crop": "fridge_000024.png",
+    "step": 24,
+    "bbox_xyxy": [
+      258.1963195800781,
+      0.0,
+      403.38177490234375,
+      244.81015014648438
+    ],
+    "source_rgb_sha256": "25060ae03315b3f6e017f6869c9aee1b26c6c940c065e5fad35754dce5c2f857",
+    "mask_pixels": 33515,
+    "mask_sha256": "45b61ad22fe4e2126f3b638decfc4dce7f8f16fbf342a11dd1fb8aac9fe6f087",
+    "segmenter": "existing MobileSAM vit_t; independent local service",
+    "outside_mask_rgb": [
+      127,
+      127,
+      127
+    ]
+  },
+  {
+    "crop": "fridge_000192.png",
+    "step": 192,
+    "bbox_xyxy": [
+      354.8863525390625,
+      0.0,
+      521.3985595703125,
+      248.4917449951172
+    ],
+    "source_rgb_sha256": "ba5fbe419ea078e5febf330fd053d3145fd782e0116a17281afbe5a9b201f8ad",
+    "mask_pixels": 37540,
+    "mask_sha256": "e06b64f2abe45cfd746424ed66f284c05e1d36194d05f480533ad9595d271a8a",
+    "segmenter": "existing MobileSAM vit_t; independent local service",
+    "outside_mask_rgb": [
+      127,
+      127,
+      127
+    ]
+  },
+  {
+    "crop": "floor_000192.png",
+    "step": 192,
+    "bbox_xyxy": [
+      0.0064849853515625,
+      163.2337646484375,
+      639.9837646484375,
+      359.9454650878906
+    ],
+    "source_rgb_sha256": "ba5fbe419ea078e5febf330fd053d3145fd782e0116a17281afbe5a9b201f8ad",
+    "mask_pixels": 109915,
+    "mask_sha256": "4877f6d46c8db9df3340da8e971fd44e43318f0b858e10384d787b38b34831f5",
+    "segmenter": "existing MobileSAM vit_t; independent local service",
+    "outside_mask_rgb": [
+      127,
+      127,
+      127
+    ]
+  },
+  {
+    "crop": "fridge_000096.png",
+    "step": 96,
+    "bbox_xyxy": [
+      294.5740966796875,
+      0.0,
+      445.93426513671875,
+      243.16941833496094
+    ],
+    "source_rgb_sha256": "d8e65cffb5353bb36fc4c294ce9888ddf5bb0fc8518e27d527a417a1a8bded38",
+    "mask_pixels": 31732,
+    "mask_sha256": "95181094f8ef3c40038a0c9131f0bec3df8d5993a3647a6e1d64ea6e62f3660c",
+    "segmenter": "existing MobileSAM vit_t; independent local service",
+    "outside_mask_rgb": [
+      127,
+      127,
+      127
+    ]
+  },
+  {
+    "crop": "fridge_000240.png",
+    "step": 240,
+    "bbox_xyxy": [
+      405.11517333984375,
+      0.0,
+      607.3229370117188,
+      250.6773223876953
+    ],
+    "source_rgb_sha256": "6ec7e010b263892c7fdc63853f5f3018be13167f5ca9aaadcb3d86025b5e651f",
+    "mask_pixels": 43006,
+    "mask_sha256": "07f23190fd68560e8dac1c2cfd4e60de7a1413c0e1d9ba322b373a3d9dc1d63b",
+    "segmenter": "existing MobileSAM vit_t; independent local service",
+    "outside_mask_rgb": [
+      127,
+      127,
+      127
+    ]
+  },
+  {
+    "crop": "floor_000240.png",
+    "step": 240,
+    "bbox_xyxy": [
+      0.01857757568359375,
+      162.0093231201172,
+      640.0,
+      359.919921875
+    ],
+    "source_rgb_sha256": "6ec7e010b263892c7fdc63853f5f3018be13167f5ca9aaadcb3d86025b5e651f",
+    "mask_pixels": 108714,
+    "mask_sha256": "4328c0f3453c80c60284b2b7addd80e781bd7912690356a02faa5f69dc2f21a8",
+    "segmenter": "existing MobileSAM vit_t; independent local service",
+    "outside_mask_rgb": [
+      127,
+      127,
+      127
+    ]
+  }
+]

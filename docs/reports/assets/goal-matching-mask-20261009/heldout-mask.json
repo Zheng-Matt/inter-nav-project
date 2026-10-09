@@ -1,0 +1,1178 @@
+{
+  "schema_version": 1,
+  "scope": "single-observation object matching; no navigation evaluation",
+  "evidence_kind": "live-human-annotated-crops",
+  "candidate_views": {
+    "legacy": "context",
+    "robust": "masked"
+  },
+  "dataset_provenance": {
+    "kind": "human annotated held-out frames",
+    "runtime_commit": "0eeb29b006bee4c6eefb823a060892a164a6e582",
+    "annotation": "Frames 96 and 240 were not used for prompt adjustment. Same single real gray-brown refrigerator instance; not an unseen-object generalization test.",
+    "sources": [
+      {
+        "step": 96,
+        "source_sha256": "d8e65cffb5353bb36fc4c294ce9888ddf5bb0fc8518e27d527a417a1a8bded38",
+        "bbox_xyxy": [
+          294.5740966796875,
+          0.0,
+          445.93426513671875,
+          243.16941833496094
+        ],
+        "crop": "fridge_000096.png"
+      },
+      {
+        "step": 240,
+        "source_sha256": "6ec7e010b263892c7fdc63853f5f3018be13167f5ca9aaadcb3d86025b5e651f",
+        "bbox_xyxy": [
+          405.11517333984375,
+          0.0,
+          607.3229370117188,
+          250.6773223876953
+        ],
+        "crop": "fridge_000240.png"
+      },
+      {
+        "step": 240,
+        "bbox_xyxy": [
+          0.01857757568359375,
+          162.0093231201172,
+          640.0,
+          359.919921875
+        ],
+        "crop": "floor_000240.png",
+        "annotation": "Main outlined region is floor. Partial fridge is background, not candidate."
+      }
+    ],
+    "dataset_role": "heldout",
+    "mask_processing": "Existing SAM mask; pixels outside mask replaced with neutral RGB 127; default context dimensions and red box unchanged. No manually drawn masks or simulator labels."
+  },
+  "dataset_sha256": "6e16bb41b70f3317374785eb8a5169c7f9c93fa79d89d0203d06f8ccee316632",
+  "python": "3.10.19 (main, Oct 21 2025, 16:43:05) [GCC 11.2.0]",
+  "baseline_revision": null,
+  "baseline_root": "/data/zzx/inter-nav-goal-matching-smoke/grutopia/results/goal_matching_smoke_20261009_1425/baseline-main",
+  "implementation_revision": "bd2bda95abc9827519ee1a1b5ad90ffd098b10ef",
+  "results": [
+    {
+      "mode": "legacy",
+      "config": {
+        "target_query": "an appliance that keeps food cold",
+        "mapping": {
+          "x_limits": [
+            -2.0,
+            9.0
+          ],
+          "y_limits": [
+            -3.0,
+            3.0
+          ],
+          "grid_resolution": 0.1,
+          "voxel_size": 0.1,
+          "obstacle_height": [
+            0.12,
+            1.8
+          ],
+          "point_height": [
+            -0.25,
+            2.75
+          ],
+          "robot_radius": 0.18,
+          "obstacle_inflation_radius": null,
+          "static_obstacle_inflation_radius": null,
+          "occupied_threshold": 0.55,
+          "free_update": 0.3,
+          "occupied_update": 0.85,
+          "sticky_occupied_threshold": 1.5,
+          "sticky_free_scale": 0.0,
+          "unknown_cost": 1.75,
+          "max_lidar_rays": 900,
+          "lidar_scan_bins": 720,
+          "max_voxel_points_per_update": 5000,
+          "graph_stride": 5,
+          "safe_recovery_y_limits": [
+            -1.25,
+            1.25
+          ]
+        },
+        "exploration": {
+          "semantic_evidence_threshold": 0.35,
+          "semantic_weight": 0.45,
+          "path_distance_weight": 0.45,
+          "information_gain_weight": 1.0,
+          "clearance_weight": 0.35,
+          "degree_weight": 0.2,
+          "extensibility_weight": 0.3,
+          "direction_weight": 0.35,
+          "visit_penalty": 0.5,
+          "failure_penalty": 1.5,
+          "dead_end_penalty": 2.0,
+          "information_radius": 0.8,
+          "clearance_radius": 1.0,
+          "reached_tolerance": 0.35,
+          "blacklist_failure_threshold": 2,
+          "max_no_progress_updates": 3,
+          "deadlock_window": 3,
+          "position_quantization": 0.25,
+          "max_graph_json_bytes": 12000,
+          "qwen_timeout_seconds": 8.0
+        },
+        "voronoi": {
+          "min_clearance": 0.0,
+          "spur_length": 0.3,
+          "frontier_min_size": 1,
+          "incremental": true,
+          "verify_incremental": false,
+          "incremental_margin_cells": 4,
+          "incremental_guard_cells": 3,
+          "incremental_max_window_fraction": 0.75,
+          "region_segmentation": true,
+          "doorway_max_width": 1.6,
+          "doorway_clearance_ratio": 1.0
+        },
+        "max_steps": 12000,
+        "target_distance": 0.7,
+        "frontier_reached_distance": 0.45,
+        "fall_height": 0.12,
+        "safe_base_height": 0.22,
+        "semantic_detection_mode": "hybrid",
+        "open_vocabulary_startup_error": null,
+        "target_semantic_classifier": "qwen-vl",
+        "target_min_observations": 1,
+        "target_embedding_threshold": 0.24,
+        "require_lexical_confirmation": true,
+        "target_confirmation_min_label_observations": 1,
+        "target_confirmation_min_label_fraction": 0.6,
+        "frontier_selection_interval": 160,
+        "topology_update_interval": 40,
+        "max_forward_speed": 0.8,
+        "max_lateral_speed": 0.2,
+        "enable_target_cues": true,
+        "target_cue_stale_steps": 480,
+        "target_cue_navigation_steps": 1200,
+        "target_cue_observe_steps": 96,
+        "target_cue_cooldown_steps": 800
+      },
+      "metrics": {
+        "cases": 20,
+        "positives": 8,
+        "negatives": 12,
+        "accuracy": 0.7,
+        "positive_recall": 0.25,
+        "false_match_rate_on_absent_goals": 0.0,
+        "precision": 1.0,
+        "service_errors": 0,
+        "warm_matching_median_us": 18.7975,
+        "warm_matching_p95_us": 29.763150000000003,
+        "service_request_median_ms": 239.9751569610089
+      },
+      "cases": [
+        {
+          "id": "heldout-96-0",
+          "query": "refrigerator",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "5f1c87ab96dd84a5bb37a82d51d658c5efb9f1ac542572318c746a69c57abb3c"
+          }
+        },
+        {
+          "id": "heldout-96-1",
+          "query": "the fridge",
+          "expected": "fridge",
+          "predicted": null,
+          "correct": false,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "5f1c87ab96dd84a5bb37a82d51d658c5efb9f1ac542572318c746a69c57abb3c"
+          }
+        },
+        {
+          "id": "heldout-96-2",
+          "query": "an appliance that keeps food cold",
+          "expected": "fridge",
+          "predicted": null,
+          "correct": false,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "5f1c87ab96dd84a5bb37a82d51d658c5efb9f1ac542572318c746a69c57abb3c"
+          }
+        },
+        {
+          "id": "heldout-96-3",
+          "query": "a gray-brown refrigerator",
+          "expected": "fridge",
+          "predicted": null,
+          "correct": false,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "5f1c87ab96dd84a5bb37a82d51d658c5efb9f1ac542572318c746a69c57abb3c"
+          }
+        },
+        {
+          "id": "heldout-96-4",
+          "query": "a red refrigerator",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "5f1c87ab96dd84a5bb37a82d51d658c5efb9f1ac542572318c746a69c57abb3c"
+          }
+        },
+        {
+          "id": "heldout-96-5",
+          "query": "a bright blue refrigerator",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "5f1c87ab96dd84a5bb37a82d51d658c5efb9f1ac542572318c746a69c57abb3c"
+          }
+        },
+        {
+          "id": "heldout-96-6",
+          "query": "a white refrigerator",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "5f1c87ab96dd84a5bb37a82d51d658c5efb9f1ac542572318c746a69c57abb3c"
+          }
+        },
+        {
+          "id": "heldout-96-7",
+          "query": "a chair for sitting",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "5f1c87ab96dd84a5bb37a82d51d658c5efb9f1ac542572318c746a69c57abb3c"
+          }
+        },
+        {
+          "id": "heldout-96-8",
+          "query": "the refrigerator beside a bed",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "5f1c87ab96dd84a5bb37a82d51d658c5efb9f1ac542572318c746a69c57abb3c"
+          }
+        },
+        {
+          "id": "heldout-240-0",
+          "query": "refrigerator",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "ebda0784dcde25f4fac0372b0c754ab11a902fe3cd8b45d5be7fc5743607b175"
+          }
+        },
+        {
+          "id": "heldout-240-1",
+          "query": "the fridge",
+          "expected": "fridge",
+          "predicted": null,
+          "correct": false,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "ebda0784dcde25f4fac0372b0c754ab11a902fe3cd8b45d5be7fc5743607b175"
+          }
+        },
+        {
+          "id": "heldout-240-2",
+          "query": "an appliance that keeps food cold",
+          "expected": "fridge",
+          "predicted": null,
+          "correct": false,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "ebda0784dcde25f4fac0372b0c754ab11a902fe3cd8b45d5be7fc5743607b175"
+          }
+        },
+        {
+          "id": "heldout-240-3",
+          "query": "a gray-brown refrigerator",
+          "expected": "fridge",
+          "predicted": null,
+          "correct": false,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "ebda0784dcde25f4fac0372b0c754ab11a902fe3cd8b45d5be7fc5743607b175"
+          }
+        },
+        {
+          "id": "heldout-240-4",
+          "query": "a red refrigerator",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "ebda0784dcde25f4fac0372b0c754ab11a902fe3cd8b45d5be7fc5743607b175"
+          }
+        },
+        {
+          "id": "heldout-240-5",
+          "query": "a bright blue refrigerator",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "ebda0784dcde25f4fac0372b0c754ab11a902fe3cd8b45d5be7fc5743607b175"
+          }
+        },
+        {
+          "id": "heldout-240-6",
+          "query": "a white refrigerator",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "ebda0784dcde25f4fac0372b0c754ab11a902fe3cd8b45d5be7fc5743607b175"
+          }
+        },
+        {
+          "id": "heldout-240-7",
+          "query": "a chair for sitting",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "ebda0784dcde25f4fac0372b0c754ab11a902fe3cd8b45d5be7fc5743607b175"
+          }
+        },
+        {
+          "id": "heldout-240-8",
+          "query": "the refrigerator beside a bed",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "ebda0784dcde25f4fac0372b0c754ab11a902fe3cd8b45d5be7fc5743607b175"
+          }
+        },
+        {
+          "id": "heldout-floor-18",
+          "query": "fridge",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "floor",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "table",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"table\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "floor": "3c0465d1f9efebd783e03fdf718e8a4c73d9fe6f42112afe0f9d62499c042ea4"
+          }
+        },
+        {
+          "id": "heldout-floor-19",
+          "query": "an appliance that keeps food cold",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "floor",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "table",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"table\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "floor": "3c0465d1f9efebd783e03fdf718e8a4c73d9fe6f42112afe0f9d62499c042ea4"
+          }
+        }
+      ],
+      "matcher_source_sha256": "8cc6298bf8deb2b2872f94b954ff509806b4388c88ad9bc1380a3582b5bd1805"
+    },
+    {
+      "mode": "robust",
+      "config": {
+        "target_query": "an appliance that keeps food cold",
+        "mapping": {
+          "x_limits": [
+            -2.0,
+            9.0
+          ],
+          "y_limits": [
+            -3.0,
+            3.0
+          ],
+          "grid_resolution": 0.1,
+          "voxel_size": 0.1,
+          "obstacle_height": [
+            0.12,
+            1.8
+          ],
+          "point_height": [
+            -0.25,
+            2.75
+          ],
+          "robot_radius": 0.18,
+          "obstacle_inflation_radius": null,
+          "static_obstacle_inflation_radius": null,
+          "occupied_threshold": 0.55,
+          "free_update": 0.3,
+          "occupied_update": 0.85,
+          "sticky_occupied_threshold": 1.5,
+          "sticky_free_scale": 0.0,
+          "unknown_cost": 1.75,
+          "max_lidar_rays": 900,
+          "lidar_scan_bins": 720,
+          "max_voxel_points_per_update": 5000,
+          "graph_stride": 5,
+          "safe_recovery_y_limits": [
+            -1.25,
+            1.25
+          ]
+        },
+        "exploration": {
+          "semantic_evidence_threshold": 0.35,
+          "semantic_weight": 0.45,
+          "path_distance_weight": 0.45,
+          "information_gain_weight": 1.0,
+          "clearance_weight": 0.35,
+          "degree_weight": 0.2,
+          "extensibility_weight": 0.3,
+          "direction_weight": 0.35,
+          "visit_penalty": 0.5,
+          "failure_penalty": 1.5,
+          "dead_end_penalty": 2.0,
+          "information_radius": 0.8,
+          "clearance_radius": 1.0,
+          "reached_tolerance": 0.35,
+          "blacklist_failure_threshold": 2,
+          "max_no_progress_updates": 3,
+          "deadlock_window": 3,
+          "position_quantization": 0.25,
+          "max_graph_json_bytes": 12000,
+          "qwen_timeout_seconds": 8.0
+        },
+        "voronoi": {
+          "min_clearance": 0.0,
+          "spur_length": 0.3,
+          "frontier_min_size": 1,
+          "incremental": true,
+          "verify_incremental": false,
+          "incremental_margin_cells": 4,
+          "incremental_guard_cells": 3,
+          "incremental_max_window_fraction": 0.75,
+          "region_segmentation": true,
+          "doorway_max_width": 1.6,
+          "doorway_clearance_ratio": 1.0
+        },
+        "max_steps": 12000,
+        "target_distance": 0.7,
+        "frontier_reached_distance": 0.45,
+        "fall_height": 0.12,
+        "safe_base_height": 0.22,
+        "semantic_detection_mode": "hybrid",
+        "open_vocabulary_startup_error": null,
+        "target_semantic_classifier": "qwen-vl",
+        "target_min_observations": 1,
+        "target_embedding_threshold": 0.24,
+        "goal_matching": {
+          "mode": "robust",
+          "verify_descriptions": true,
+          "description_threshold": 0.8,
+          "embedding_margin": 0.03,
+          "min_node_confidence": 0.1
+        },
+        "require_lexical_confirmation": true,
+        "target_confirmation_min_label_observations": 1,
+        "target_confirmation_min_label_fraction": 0.6,
+        "frontier_selection_interval": 160,
+        "topology_update_interval": 40,
+        "max_forward_speed": 0.8,
+        "max_lateral_speed": 0.2,
+        "enable_target_cues": true,
+        "target_cue_stale_steps": 480,
+        "target_cue_navigation_steps": 1200,
+        "target_cue_observe_steps": 96,
+        "target_cue_cooldown_steps": 800
+      },
+      "metrics": {
+        "cases": 20,
+        "positives": 8,
+        "negatives": 12,
+        "accuracy": 1.0,
+        "positive_recall": 1.0,
+        "false_match_rate_on_absent_goals": 0.0,
+        "precision": 1.0,
+        "service_errors": 0,
+        "warm_matching_median_us": 10.9145,
+        "warm_matching_p95_us": 26.266999999999985,
+        "service_request_median_ms": 698.6001944169402
+      },
+      "cases": [
+        {
+          "id": "heldout-96-0",
+          "query": "refrigerator",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "c7519d39738fbf5f3e31e2944161e87eb6a99aaf741ed531430b9bb32222b642"
+          }
+        },
+        {
+          "id": "heldout-96-1",
+          "query": "the fridge",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "c7519d39738fbf5f3e31e2944161e87eb6a99aaf741ed531430b9bb32222b642"
+          }
+        },
+        {
+          "id": "heldout-96-2",
+          "query": "an appliance that keeps food cold",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 1.0,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a gray refrigerator with a black vertical handle\",\"label\":\"refrigerator\",\"goal_match_score\":1.0}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "c7519d39738fbf5f3e31e2944161e87eb6a99aaf741ed531430b9bb32222b642"
+          }
+        },
+        {
+          "id": "heldout-96-3",
+          "query": "a gray-brown refrigerator",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 1.0,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a gray refrigerator with a black vertical handle\",\"label\":\"refrigerator\",\"goal_match_score\":1.0}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "c7519d39738fbf5f3e31e2944161e87eb6a99aaf741ed531430b9bb32222b642"
+          }
+        },
+        {
+          "id": "heldout-96-4",
+          "query": "a red refrigerator",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 0.0,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a gray refrigerator with a black vertical handle\",\"label\":\"refrigerator\",\"goal_match_score\":0.0}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "c7519d39738fbf5f3e31e2944161e87eb6a99aaf741ed531430b9bb32222b642"
+          }
+        },
+        {
+          "id": "heldout-96-5",
+          "query": "a bright blue refrigerator",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 0.0,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a gray refrigerator\",\"label\":\"refrigerator\",\"goal_match_score\":0.0}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "c7519d39738fbf5f3e31e2944161e87eb6a99aaf741ed531430b9bb32222b642"
+          }
+        },
+        {
+          "id": "heldout-96-6",
+          "query": "a white refrigerator",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 0.0,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a gray refrigerator with a black vertical handle\",\"label\":\"refrigerator\",\"goal_match_score\":0.0}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "c7519d39738fbf5f3e31e2944161e87eb6a99aaf741ed531430b9bb32222b642"
+          }
+        },
+        {
+          "id": "heldout-96-7",
+          "query": "a chair for sitting",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 0.0,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a gray refrigerator with a black vertical handle\",\"label\":\"refrigerator\",\"goal_match_score\":0.0}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "c7519d39738fbf5f3e31e2944161e87eb6a99aaf741ed531430b9bb32222b642"
+          }
+        },
+        {
+          "id": "heldout-96-8",
+          "query": "the refrigerator beside a bed",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 0.0,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a gray refrigerator with a black vertical handle\",\"label\":\"refrigerator\",\"goal_match_score\":0.0}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "c7519d39738fbf5f3e31e2944161e87eb6a99aaf741ed531430b9bb32222b642"
+          }
+        },
+        {
+          "id": "heldout-240-0",
+          "query": "refrigerator",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "dda421ac15fd4c70f08fd0dd676d8d19f5e755799087b74a37673c5b211e7efb"
+          }
+        },
+        {
+          "id": "heldout-240-1",
+          "query": "the fridge",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "dda421ac15fd4c70f08fd0dd676d8d19f5e755799087b74a37673c5b211e7efb"
+          }
+        },
+        {
+          "id": "heldout-240-2",
+          "query": "an appliance that keeps food cold",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 1.0,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a beige refrigerator with a black vertical handle\",\"label\":\"refrigerator\",\"goal_match_score\":1.0}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "dda421ac15fd4c70f08fd0dd676d8d19f5e755799087b74a37673c5b211e7efb"
+          }
+        },
+        {
+          "id": "heldout-240-3",
+          "query": "a gray-brown refrigerator",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 1.0,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a gray-brown refrigerator\",\"label\":\"refrigerator\",\"goal_match_score\":1.0}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "dda421ac15fd4c70f08fd0dd676d8d19f5e755799087b74a37673c5b211e7efb"
+          }
+        },
+        {
+          "id": "heldout-240-4",
+          "query": "a red refrigerator",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 0.0,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a gray refrigerator\",\"label\":\"refrigerator\",\"goal_match_score\":0.0}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "dda421ac15fd4c70f08fd0dd676d8d19f5e755799087b74a37673c5b211e7efb"
+          }
+        },
+        {
+          "id": "heldout-240-5",
+          "query": "a bright blue refrigerator",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 0.0,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a gray refrigerator\",\"label\":\"refrigerator\",\"goal_match_score\":0.0}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "dda421ac15fd4c70f08fd0dd676d8d19f5e755799087b74a37673c5b211e7efb"
+          }
+        },
+        {
+          "id": "heldout-240-6",
+          "query": "a white refrigerator",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 0.0,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a gray refrigerator\",\"label\":\"refrigerator\",\"goal_match_score\":0.0}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "dda421ac15fd4c70f08fd0dd676d8d19f5e755799087b74a37673c5b211e7efb"
+          }
+        },
+        {
+          "id": "heldout-240-7",
+          "query": "a chair for sitting",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 0.0,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a beige refrigerator\",\"label\":\"refrigerator\",\"goal_match_score\":0.0}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "dda421ac15fd4c70f08fd0dd676d8d19f5e755799087b74a37673c5b211e7efb"
+          }
+        },
+        {
+          "id": "heldout-240-8",
+          "query": "the refrigerator beside a bed",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 0.0,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a beige refrigerator with a black vertical handle\",\"label\":\"refrigerator\",\"goal_match_score\":0.0}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "dda421ac15fd4c70f08fd0dd676d8d19f5e755799087b74a37673c5b211e7efb"
+          }
+        },
+        {
+          "id": "heldout-floor-18",
+          "query": "fridge",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "floor",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "table",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"table\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "floor": "8a0a270b8c84cc5e9e85177629bd008706fb47e367040fe899410839cff1778b"
+          }
+        },
+        {
+          "id": "heldout-floor-19",
+          "query": "an appliance that keeps food cold",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "floor",
+              "goal_match_score": null,
+              "goal_verification_status": "abstained",
+              "label": "unknown",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"observed_object\":\"a gray rectangular object with a vertical edge\",\"label\":\"unknown\",\"goal_match_score\":null}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "floor": "8a0a270b8c84cc5e9e85177629bd008706fb47e367040fe899410839cff1778b"
+          }
+        }
+      ],
+      "matcher_source_sha256": "7e54ef7cd3acf2cd1f06f0844f1c5292744b48375329cd18602ecfb728cd833c"
+    }
+  ],
+  "frozen_baseline_revision": "2a629e91e0e25dcb9aeb4ff5ee126b397d9ebedb"
+}
