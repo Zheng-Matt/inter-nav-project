@@ -196,7 +196,7 @@ def _qwen_vl_app(args):
                            min_pixels=64 * 64, max_pixels=args.vl_max_pixels).to(model.device)
         with torch.inference_mode():
             generated = model.generate(**inputs, max_new_tokens=(
-                max(64, args.vl_max_new_tokens) if target_query is not None else args.vl_max_new_tokens
+                max(128, args.vl_max_new_tokens) if target_query is not None else args.vl_max_new_tokens
             ), do_sample=False)
         raw_text = processor.batch_decode(
             generated[:, inputs['input_ids'].shape[1]:], skip_special_tokens=True,

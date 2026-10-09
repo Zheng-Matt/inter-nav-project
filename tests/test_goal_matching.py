@@ -99,6 +99,12 @@ class GoalMatchingTest(unittest.TestCase):
         component.target_node = node
         self.assertTrue(component.target_confirmed)
         self.assertEqual(component.statistics()['target_match_method'], 'description')
+        from grutopia_extension.interactive_navigation.semantic_run_summary import build_run_summary
+
+        summary = build_run_summary(
+            target_query='white fridge', detection_mode='open_vocab', max_steps=100, component=component,
+        )
+        self.assertEqual(summary['target_match_method'], 'description')
         self.evidence(component, 'refrigerator', count=8, query=query, score=0.95)
         self.assertEqual(component._target_label_support(), (8, 8))
         # New queries cannot inherit description confirmations.
