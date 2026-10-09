@@ -73,7 +73,8 @@ class GoalVerificationServiceTest(unittest.TestCase):
         self.assertEqual(response.json['goal_match_score'], 0.95)
         self.assertIn('ALL stated visual attributes', self.prompt)
         self.assertIn('white fridge', self.prompt)
-        self.assertEqual(self.budgets, [64])
+        self.assertIn('observed_object FIRST', self.prompt)
+        self.assertEqual(self.budgets, [128])
         self.assertTrue(self.client.get('/health').json['goal_verification'])
 
     def test_category_only_keeps_original_budget_and_response(self):
