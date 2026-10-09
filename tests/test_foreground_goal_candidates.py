@@ -42,12 +42,22 @@ class ForegroundGoalCandidateTest(unittest.TestCase):
         self.assertEqual(p.last_debug_frame['classified'][0]['crop_mode'], 'masked')
 
     def test_floor_rejects_before_classifier_class_votes_and_cues(self):
+        for goal in ('fridge', 'table', 'a wooden table'):
+            with self.subTest(goal=goal):
+                p, rgb, depth, points = self.pipeline(height=.151)
+                self.assertEqual(p.perceive(rgb, depth, points, goal, step=1), [])
+                self.assertEqual(self.images, [])
+                self.assertEqual(p.last_target_cues, [])
+                self.assertEqual(p.last_debug_frame['mapped'], [])
+                self.assertEqual(p.last_debug_frame['rejected_geometry'][0]['reason'], 'ground_surface')
+
+    def test_ground_height_is_world_relative_and_unknown_height_disables_guard(self):
+        p, rgb, depth, points = self.pipeline(height=1.151)
+        p.config = replace(p.config, semantic_ground_height=1.15)
+        self.assertEqual(p.perceive(rgb, depth, points, 'fridge'), [])
         p, rgb, depth, points = self.pipeline(height=.151)
-        self.assertEqual(p.perceive(rgb, depth, points, 'fridge', step=1), [])
-        self.assertEqual(self.images, [])
-        self.assertEqual(p.last_target_cues, [])
-        self.assertEqual(p.last_debug_frame['mapped'], [])
-        self.assertEqual(p.last_debug_frame['rejected_geometry'][0]['reason'], 'ground_surface')
+        p.config = replace(p.config, semantic_ground_height=None)
+        self.assertEqual(len(p.perceive(rgb, depth, points, 'fridge')), 1)
 
     def test_visible_object_survives_floor_pixels_in_mask(self):
         p, rgb, depth, points = self.pipeline(height=.151)

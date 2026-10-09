@@ -9,7 +9,7 @@ import traceback
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 from grutopia.core.config import Config, SimConfig
 from grutopia.core.gym_env import Env
@@ -97,6 +97,7 @@ class Go2NavigationRunConfig:
 class Go2SemanticExplorationRunConfig:
     target_query: str = 'refrigerator'
     gpu: int = 1
+    physics_gpu: Optional[int] = None
     perception_gpu: int = 5
     qwen_device: str = 'cuda:4'
     headless: bool = True
@@ -148,6 +149,8 @@ class Go2SemanticExplorationRunConfig:
             raise ValueError('semantic ground clearance must be finite and nonnegative')
         if min(self.gpu, self.perception_gpu) < 0:
             raise ValueError('GPU indices cannot be negative')
+        if self.physics_gpu is not None and self.physics_gpu < 0:
+            raise ValueError('physics GPU ordinal cannot be negative')
         if self.max_steps <= 0 or self.mapping_warmup_steps < 0:
             raise ValueError('max_steps must be positive and warmup cannot be negative')
         if self.log_every <= 0 or self.record_every <= 0 or self.video_fps <= 0:
@@ -502,7 +505,7 @@ def run_go2_semantic_exploration(
             ),
             headless=run.headless,
             active_gpu=run.gpu,
-            physics_gpu=run.gpu,
+            physics_gpu=run.gpu if run.physics_gpu is None else run.physics_gpu,
         )
         configure_scene_mdl_paths(profile.scene_asset_path)
         import_extensions(('controllers', 'objects', 'robots', 'sensors', 'tasks'))

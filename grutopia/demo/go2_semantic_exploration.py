@@ -61,6 +61,8 @@ def parse_args():
     parser.add_argument('--environment-length', type=float, default=16.0)
     parser.add_argument('--environment-width', type=float, default=10.0)
     parser.add_argument('--gpu', type=int, default=1)
+    parser.add_argument('--physics-gpu', type=int,
+                        help='Physics CUDA ordinal within visible devices; defaults to --gpu.')
     parser.add_argument('--perception-gpu', type=int, default=5)
     parser.add_argument('--qwen-device', default='cuda:4')
     parser.add_argument('--max-steps', type=int, default=12000)
@@ -227,6 +229,7 @@ def main():
             target_embedding_threshold=args.goal_embedding_threshold,
             ground_height=GRSCENE_FLOOR_TOP if args.scene == 'grscene' else 0.0,
             gpu=args.gpu,
+            physics_gpu=args.physics_gpu,
             perception_gpu=args.perception_gpu,
             qwen_device=args.qwen_device,
             headless=args.headless,
