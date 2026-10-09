@@ -1,0 +1,1 @@
+{"reason": "foreign GPU allocation increased", "contexts": [{"gpu": "3", "memory_mib": 176}, {"gpu": "3", "memory_mib": 776}, {"gpu": "6", "memory_mib": 176}]}

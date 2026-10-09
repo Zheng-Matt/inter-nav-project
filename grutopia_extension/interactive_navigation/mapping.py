@@ -84,6 +84,9 @@ class SemanticDetection:
     # Distinct labels observed for this object in one camera frame. Geometry
     # can be fused without discarding a lower-confidence target label.
     label_evidence: Tuple[str, ...] = ()
+    # Query-specific visual evidence, separate from category votes.
+    goal_query: Optional[str] = None
+    goal_match_score: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -501,9 +504,31 @@ class SceneGraphMap:
         self._object_position_sums: Dict[str, np.ndarray] = {}
         self._object_embedding_sums: Dict[str, np.ndarray] = {}
         self._object_label_counts: Dict[str, Dict[str, int]] = {}
+        self._object_goal_scores: Dict[str, Dict[str, list]] = {}
+        self._object_goal_steps: Dict[Tuple[str, str], int] = {}
 
     def label_counts(self, node_id: str) -> Dict[str, int]:
         return dict(self._object_label_counts.get(node_id, {}))
+
+    def goal_match_counts(self, node_id: str, query: str, threshold: float) -> Tuple[int, int]:
+        scores = self._object_goal_scores.get(node_id, {}).get(query, [])
+        return sum(score >= threshold for score in scores), len(scores)
+
+    def goal_match_evidence(self) -> dict:
+        return {node_id: {query: list(scores) for query, scores in queries.items()}
+                for node_id, queries in self._object_goal_scores.items()}
+
+    def _record_goal_score(self, node_id: str, detection: SemanticDetection):
+        score, query = detection.goal_match_score, detection.goal_query
+        if (not query or 'qwen_vl' not in detection.sources or canonical_semantic_label(detection.label) == 'unknown'
+                or isinstance(score, bool) or not isinstance(score, (int, float))
+                or not np.isfinite(score) or not 0 <= score <= 1):
+            return
+        key = (node_id, query)
+        if int(detection.step) <= self._object_goal_steps.get(key, -1):
+            return
+        self._object_goal_steps[key] = int(detection.step)
+        self._object_goal_scores.setdefault(node_id, {}).setdefault(query, []).append(float(score))
 
     def update_detections(self, detections: Iterable[SemanticDetection]):
         # One representative per node and capture step. Process the strongest
@@ -601,6 +626,7 @@ class SceneGraphMap:
                         detection.embedding,
                         dtype=np.float64,
                     )
+            self._record_goal_score(node.node_id if candidates else node_id, detection)
 
     def object_nodes(self) -> Tuple[SceneGraphNode, ...]:
         return tuple(self._objects.values())

@@ -1,0 +1,82 @@
+{
+  "schema_version": 2,
+  "status": "failed",
+  "reason": "global_step_limit",
+  "arrival_verified": false,
+  "step": 479,
+  "max_steps": 480,
+  "exit_code": 2,
+  "error_type": null,
+  "target_query": "fridge",
+  "target_found": true,
+  "target_confirmed": true,
+  "target_label_support": 20,
+  "target_match_method": "lexical",
+  "rejected_provisional_targets": 0,
+  "target_node": "object:refrigerator:0",
+  "target_label": "refrigerator",
+  "target_position": [
+    11.651640033721923,
+    -2.5837786555290223,
+    0.5762113466858864
+  ],
+  "approach_goal": [
+    10.850000000000001,
+    -2.55,
+    0.4123048484325409
+  ],
+  "final_position": [
+    10.046904563903809,
+    -2.6128368377685547,
+    0.3665215075016022
+  ],
+  "goal_distance_m": 0.8055,
+  "target_distance_m": 1.605,
+  "arrival_threshold_m": 0.7,
+  "arrival_margin_m": -0.1055,
+  "arrival_rule": "xy_distance_to_approach_goal",
+  "profile_goal": [
+    12.0,
+    -2.6,
+    0.4
+  ],
+  "profile_goal_distance_min_m": 1.9347,
+  "profile_goal_distance_min_step": 439,
+  "profile_goal_distance_final_m": 1.9531,
+  "perception": {
+    "requested_mode": "isaac",
+    "effective_mode": "isaac",
+    "open_vocabulary_frames": 0,
+    "open_vocabulary_failures": 0
+  },
+  "planning": {
+    "plans": 2,
+    "replans": 1,
+    "planning_failures": 0
+  },
+  "voronoi": {
+    "incremental_updates": 0,
+    "incremental_fallbacks": 12,
+    "incremental_fallback_reasons": {
+      "window_fraction": 12
+    },
+    "incremental_seam_checks": 14,
+    "incremental_seam_mismatches": 12,
+    "incremental_verification_checks": 0,
+    "incremental_verification_mismatches": 0,
+    "incremental_verification_mismatched_cells": 0,
+    "last_verification_mismatch_revision": null,
+    "incremental_window_evaluations": 12,
+    "incremental_max_window_fraction": 1.0,
+    "window_to_changed_ratio": 21.05,
+    "incremental_seconds": 0.146,
+    "full_build_seconds": 0.224,
+    "verification_seconds": 0.0
+  },
+  "completion_recorded": true,
+  "run_id": "navigation",
+  "started_at": "2026-10-09T06:28:48+00:00",
+  "finished_at": "2026-10-09T06:29:33+00:00",
+  "artifacts_complete": true,
+  "artifact_errors": []
+}

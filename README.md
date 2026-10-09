@@ -151,6 +151,18 @@ Periodic console progress stays compact.
 
 An empty programmatic room is available with `--scene programmatic`.
 
+Goal matching defaults to `--goal-matching robust`: exact category aliases are
+shared across classifiers, and Qwen-VL verifies full descriptions such as
+`--target 'white fridge'` within the existing crop classification request.
+Description scores are accumulated separately from category votes. An older
+Qwen service without verification fields cannot confirm a description.
+Use `--goal-matching legacy` for the original baseline. Configuration, CPU
+checks and experiment output paths are documented in
+the [goal matching report](docs/reports/open-vocabulary-goal-matching-2026-10-09.md).
+The [GPU 0 smoke report](docs/reports/open-vocabulary-goal-matching-smoke-2026-10-09.md)
+records passed synonym/functional queries and unresolved attribute, temporal
+confirmation, and navigation arrival failures; full online validation is pending.
+
 A finished run prints `semantic_exploration_result` with `"success": true`
 and writes to a new timestamped directory under `grutopia/results/`:
 

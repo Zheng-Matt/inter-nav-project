@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import base64
+import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Optional, Sequence, Tuple
 
 import cv2
@@ -12,6 +13,7 @@ import numpy as np
 import requests
 
 from grutopia_extension.interactive_navigation.mapping import SemanticDetection
+from grutopia_extension.interactive_navigation.goal_matching import GoalMatchingConfig, GoalQuery, parse_goal_score
 
 
 BBox = Tuple[float, float, float, float]
@@ -86,7 +88,11 @@ class OpenVocabularyPerceptionConfig:
     qwen_vl_max_candidates: int = 12
     qwen_vl_crop_margin: float = 0.15
     qwen_vl_crop_max_side: int = 384
+    qwen_vl_crop_mode: str = 'masked'
+    semantic_ground_height: Optional[float] = None
+    semantic_ground_clearance: float = 0.02
     proposal_nms_iou: float = 0.80
+    goal_matching: GoalMatchingConfig = field(default_factory=GoalMatchingConfig)
 
     def __post_init__(self) -> None:
         if self.semantic_classifier not in ('qwen-vl', 'clip'):
@@ -95,6 +101,12 @@ class OpenVocabularyPerceptionConfig:
             raise ValueError('Qwen-VL requires a URL and positive timeout')
         if self.qwen_vl_crop_max_side < 64 or self.qwen_vl_max_candidates < 1:
             raise ValueError('Qwen-VL crop size must be >=64 and candidate limit >=1')
+        if self.qwen_vl_crop_mode not in ('context', 'masked'):
+            raise ValueError('Qwen-VL crop mode must be context or masked')
+        if self.semantic_ground_height is not None and not math.isfinite(self.semantic_ground_height):
+            raise ValueError('semantic ground height must be finite or None')
+        if not math.isfinite(self.semantic_ground_clearance) or self.semantic_ground_clearance < 0:
+            raise ValueError('semantic ground clearance must be finite and nonnegative')
         if not 0 <= self.qwen_vl_crop_margin <= 0.5 or not 0 < self.proposal_nms_iou <= 1:
             raise ValueError('invalid Qwen-VL crop margin or proposal NMS threshold')
         if self.request_timeout <= 0:
@@ -122,6 +134,8 @@ class OpenVocabularyDetection:
     classifier_model: Optional[str] = None
     classifier_response: Optional[str] = None
     proposal_source: str = 'legacy'
+    goal_query: Optional[str] = None
+    goal_match_score: Optional[float] = None
 
     def to_semantic_detection(self) -> SemanticDetection:
         """Convert the spatial portion to the mapping module's current type."""
@@ -138,6 +152,8 @@ class OpenVocabularyDetection:
             point_count=max(1, int(self.point_count)),
             step=int(self.step),
             sources=('open_vocabulary', 'qwen_vl') if self.label_source == 'qwen-vl' else ('open_vocabulary',),
+            goal_query=self.goal_query,
+            goal_match_score=self.goal_match_score,
         )
 
 
@@ -208,6 +224,7 @@ class AgentVLMBackend:
                     key: payload[key] for key in (
                         'service', 'model', 'checkpoint', 'box_threshold', 'text_threshold',
                         'max_pixels', 'max_new_tokens',
+                        'goal_verification',
                     ) if key in payload
                 },
             }
@@ -228,11 +245,12 @@ class AgentVLMBackend:
             for box, score, label in zip(boxes, scores, labels)
         ]
 
-    def classify(self, image: np.ndarray, labels: Sequence[str]) -> dict:
+    def classify(self, image: np.ndarray, labels: Sequence[str], target_query: Optional[str] = None) -> dict:
         # This service runs in the VL environment, not inside Isaac Sim.
         response = self._session.post(
             self.config.qwen_vl_url,
-            json={'image': self._encode_image(image), 'labels': list(labels)},
+            json={'image': self._encode_image(image), 'labels': list(labels),
+                  **({'target_query': target_query} if target_query is not None else {})},
             timeout=self.config.qwen_vl_timeout,
             proxies={'http': '', 'https': ''},
         )
@@ -332,6 +350,9 @@ class OpenVocabularyPerception:
             return ' . '.join(unique)
         # Preserve the legacy single-pass CLIP mode.
         labels = [part.strip() for part in target.replace('|', '.').split('.') if part.strip()]
+        if self.config.goal_matching.mode == 'robust':
+            goal = GoalQuery.parse(target)
+            labels = [str(target).strip()] if goal.descriptive else list(goal.alternatives)
         if include_context:
             labels.extend(self.config.context_categories)
         normalized = (' '.join(label.casefold().split()) for label in labels)
@@ -342,6 +363,11 @@ class OpenVocabularyPerception:
     def build_target_query(self, target: str) -> str:
         """Pass 2: a small deterministic caption, separate from environment words."""
         terms = []
+        if self.config.goal_matching.mode == 'robust':
+            goal = GoalQuery.parse(target)
+            if goal.descriptive:
+                return str(target).strip().rstrip('.')
+            target = ' | '.join(goal.alternatives)
         for label in self._target_labels(target):
             terms.extend(TARGET_SEARCH_TERMS.get(label, (label,)))
         if not terms:
@@ -383,6 +409,7 @@ class OpenVocabularyPerception:
             'boxes': [],
             'mapped': [],
             'classified': [],
+            'rejected_geometry': [],
             'target_cues': [],
             'item_errors': [],
         }
@@ -533,7 +560,12 @@ class OpenVocabularyPerception:
         use_vl = self.config.semantic_classifier == 'qwen-vl'
         if use_vl:
             proposals = self._select_proposals(proposals, step)
-        categories = list(dict.fromkeys((*CLASSIFICATION_LABELS, *self._target_labels(target))))
+        goal = GoalQuery.parse(target) if target else None
+        robust = self.config.goal_matching.mode == 'robust'
+        target_labels = goal.alternatives if robust and goal and not goal.descriptive else self._target_labels(target)
+        if robust and goal and goal.descriptive:
+            target_labels = ()  # A description is not a Qwen category.
+        categories = list(dict.fromkeys((*CLASSIFICATION_LABELS, *target_labels)))
         for label, confidence, bbox, proposal_source in proposals:
             try:
                 mask = self._run_segmenter(image, bbox)
@@ -544,9 +576,31 @@ class OpenVocabularyPerception:
                 if len(world_points) < self.config.min_points:
                     continue
                 centroid = tuple(float(v) for v in world_points.mean(axis=0))
+                # Floor masks must not produce semantic votes or target cues.
+                # Unknown floor height or zero clearance disables this check.
+                if (use_vl and robust and self.config.semantic_ground_height is not None
+                        and self.config.semantic_ground_clearance > 0):
+                    height_p95 = float(np.percentile(world_points[:, 2], 95))
+                    cutoff = self.config.semantic_ground_height + self.config.semantic_ground_clearance
+                    if height_p95 <= cutoff:
+                        if self.last_debug_frame is not None:
+                            self.last_debug_frame['rejected_geometry'].append({
+                                'bbox_xyxy': list(bbox), 'raw_label': label,
+                                'reason': 'ground_surface', 'proposal_source': proposal_source,
+                                'height_p95_m': height_p95, 'cutoff_m': cutoff,
+                                'valid_points': len(world_points),
+                            })
+                        continue
                 classification = {}
+                verify_goal = (robust and goal and goal.descriptive
+                               and self.config.goal_matching.verify_descriptions)
                 if use_vl:
-                    classification = self.classifier.classify(self._qwen_context_crop(image, bbox), categories)
+                    crop_mask = mask if robust and self.config.qwen_vl_crop_mode == 'masked' else None
+                    crop = self._qwen_context_crop(image, bbox, mask=crop_mask)
+                    if verify_goal:
+                        classification = self.classifier.classify(crop, categories, target_query=str(target))
+                    else:
+                        classification = self.classifier.classify(crop, categories)
                     final_label = classification.get('label')
                     if final_label not in categories or not classification.get('model'):
                         raise ValueError('classifier returned invalid category or missing model provenance')
@@ -558,6 +612,10 @@ class OpenVocabularyPerception:
                             'classifier_response': classification.get('raw_text'),
                             'reason': classification.get('reason', 'classified'),
                             'accepted': final_label != 'unknown',
+                            'crop_mode': 'masked' if crop_mask is not None else 'context',
+                            'goal_query': goal.text if goal and goal.descriptive else None,
+                            'goal_match_score': parse_goal_score(classification.get('goal_match_score')) if verify_goal else None,
+                            'goal_verification_status': classification.get('goal_verification_status', 'unavailable'),
                         })
                     if proposal_source == 'target':
                         cue = TargetObservationCue(
@@ -585,6 +643,8 @@ class OpenVocabularyPerception:
                     label_source='qwen-vl' if use_vl else 'grounding-dino',
                     classifier_model=classification.get('model'), classifier_response=classification.get('raw_text'),
                     proposal_source=proposal_source,
+                    goal_query=goal.text if robust and goal and goal.descriptive else None,
+                    goal_match_score=parse_goal_score(classification.get('goal_match_score')) if use_vl and verify_goal else None,
                 ))
             except Exception as error:
                 self.last_item_errors.append({'label': label, 'type': type(error).__name__, 'message': str(error)})
@@ -611,8 +671,8 @@ class OpenVocabularyPerception:
             kept.append(proposal)
         return kept
 
-    def _qwen_context_crop(self, image: np.ndarray, bbox: BBox) -> np.ndarray:
-        """Preserve real RGB background; mark the original bbox inside a padded crop."""
+    def _qwen_context_crop(self, image: np.ndarray, bbox: BBox, mask: Optional[np.ndarray] = None) -> np.ndarray:
+        """Keep object colors; optionally hide pixels outside the existing SAM mask."""
         height, width = image.shape[:2]
         x1, y1, x2, y2 = bbox
         margin = self.config.qwen_vl_crop_margin
@@ -623,6 +683,14 @@ class OpenVocabularyPerception:
         crop = image[top:bottom, left:right].copy()
         if crop.size == 0:
             raise ValueError('cannot classify an empty context crop')
+        if mask is not None:
+            mask = np.asarray(mask)
+            if mask.shape != image.shape[:2] or mask.dtype != np.bool_:
+                raise ValueError('Qwen foreground mask must be boolean and align with RGB')
+            foreground = mask[top:bottom, left:right]
+            if not foreground.any():
+                raise ValueError('cannot classify an empty foreground mask')
+            crop[~foreground] = (127, 127, 127)
         cv2.rectangle(crop, (max(0, int(x1) - left), max(0, int(y1) - top)), (min(right - left - 1, int(x2) - left), min(bottom - top - 1, int(y2) - top)), (255, 0, 0), 1)
         scale = min(1.0, self.config.qwen_vl_crop_max_side / max(crop.shape[:2]))
         if scale < 1.0:

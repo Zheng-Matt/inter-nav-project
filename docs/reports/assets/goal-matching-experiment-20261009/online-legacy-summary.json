@@ -1,0 +1,74 @@
+{
+  "schema_version": 2,
+  "status": "failed",
+  "reason": "global_step_limit",
+  "arrival_verified": false,
+  "step": 1199,
+  "max_steps": 1200,
+  "exit_code": 2,
+  "error_type": null,
+  "target_query": "a large appliance used to keep food cold",
+  "target_found": false,
+  "target_confirmed": false,
+  "target_label_support": 0,
+  "target_match_method": null,
+  "rejected_provisional_targets": 0,
+  "target_node": null,
+  "target_label": null,
+  "target_position": null,
+  "approach_goal": null,
+  "final_position": [
+    9.160199165344238,
+    -1.065274953842163,
+    0.5171868801116943
+  ],
+  "goal_distance_m": null,
+  "target_distance_m": null,
+  "arrival_threshold_m": 1.1,
+  "arrival_margin_m": null,
+  "arrival_rule": "xy_distance_to_approach_goal",
+  "profile_goal": [
+    10.2,
+    -1.76,
+    0.55
+  ],
+  "profile_goal_distance_min_m": 1.1757,
+  "profile_goal_distance_min_step": 1112,
+  "profile_goal_distance_final_m": 1.2505,
+  "perception": {
+    "requested_mode": "open_vocab",
+    "effective_mode": "open_vocab",
+    "open_vocabulary_frames": 50,
+    "open_vocabulary_failures": 0
+  },
+  "planning": {
+    "plans": 6,
+    "replans": 5,
+    "planning_failures": 0
+  },
+  "voronoi": {
+    "incremental_updates": 9,
+    "incremental_fallbacks": 21,
+    "incremental_fallback_reasons": {
+      "window_fraction": 21
+    },
+    "incremental_seam_checks": 78,
+    "incremental_seam_mismatches": 60,
+    "incremental_verification_checks": 0,
+    "incremental_verification_mismatches": 0,
+    "incremental_verification_mismatched_cells": 0,
+    "last_verification_mismatch_revision": null,
+    "incremental_window_evaluations": 30,
+    "incremental_max_window_fraction": 1.0,
+    "window_to_changed_ratio": 26.04,
+    "incremental_seconds": 0.657,
+    "full_build_seconds": 0.86,
+    "verification_seconds": 0.0
+  },
+  "completion_recorded": true,
+  "run_id": "minimal-online-legacy",
+  "started_at": "2026-10-09T07:51:03+00:00",
+  "finished_at": "2026-10-09T07:53:05+00:00",
+  "artifacts_complete": true,
+  "artifact_errors": []
+}
