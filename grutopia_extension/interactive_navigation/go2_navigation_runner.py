@@ -6,7 +6,7 @@ import math
 import os
 import time
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence, Tuple
@@ -15,6 +15,7 @@ from grutopia.core.config import Config, SimConfig
 from grutopia.core.gym_env import Env
 from grutopia.core.runtime import SimulatorRuntime
 from grutopia_extension import import_extensions
+from grutopia_extension.interactive_navigation.goal_matching import GoalMatchingConfig
 from grutopia_extension.configs.robots.go2 import (
     DEFAULT_GO2_POLICY_PATH,
     DEFAULT_GO2_USD_PATH,
@@ -114,6 +115,8 @@ class Go2SemanticExplorationRunConfig:
     # or 'hybrid' (fused). See SemanticDetectionMode.
     semantic_detection_mode: str = 'open_vocab'
     semantic_classifier: str = 'qwen-vl'
+    goal_matching: GoalMatchingConfig = field(default_factory=GoalMatchingConfig)
+    target_embedding_threshold: float = 0.24
     qwen_vl_url: str = 'http://localhost:12185/classify'
     qwen_vl_timeout: float = 60.0
     qwen_vl_max_candidates: int = 12
@@ -128,6 +131,8 @@ class Go2SemanticExplorationRunConfig:
     def __post_init__(self):
         if not self.target_query.strip():
             raise ValueError('target_query cannot be empty')
+        if not math.isfinite(self.target_embedding_threshold) or not -1 <= self.target_embedding_threshold <= 1:
+            raise ValueError('target_embedding_threshold must be finite and in [-1, 1]')
         if self.semantic_classifier not in ('qwen-vl', 'clip'):
             raise ValueError('semantic_classifier must be qwen-vl or clip')
         if self.qwen_vl_timeout <= 0 or self.qwen_vl_max_candidates < 1:
@@ -420,6 +425,7 @@ def run_go2_semantic_exploration(
                     query_interval=0.25,
                     request_timeout=8.0,
                     semantic_classifier=run.semantic_classifier,
+                    goal_matching=run.goal_matching,
                     qwen_vl_url=run.qwen_vl_url,
                     qwen_vl_timeout=run.qwen_vl_timeout,
                     qwen_vl_max_candidates=run.qwen_vl_max_candidates,
@@ -546,6 +552,8 @@ def run_go2_semantic_exploration(
         component = SemanticExplorationComponent(
             SemanticExplorationConfig(
                 target_query=run.target_query,
+                goal_matching=run.goal_matching,
+                target_embedding_threshold=run.target_embedding_threshold,
                 mapping=profile.mapping,
                 voronoi=SemanticVoronoiConfig(
                     verify_incremental=run.verify_voronoi_incremental,

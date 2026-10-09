@@ -9,6 +9,7 @@ import re
 import cv2
 import numpy as np
 from flask import Flask, jsonify, request
+from grutopia_extension.interactive_navigation.goal_matching import goal_verification_prompt, parse_goal_score
 
 
 def parse_args():
@@ -154,11 +155,16 @@ def _qwen_vl_app(args):
     @app.get('/health')
     def health():
         return jsonify({'ready': True, 'service': 'qwen-vl', 'model': args.qwen_vl_model,
+                        'goal_verification': True,
                         'max_pixels': args.vl_max_pixels, 'max_new_tokens': args.vl_max_new_tokens})
 
     @app.post('/classify')
     def classify():
         payload = request.get_json(force=True)
+        target_query = payload.get('target_query')
+        if target_query is not None and (not isinstance(target_query, str)
+                                        or not target_query.strip() or len(target_query) > 512):
+            return jsonify({'error': 'target_query must be nonempty text of at most 512 characters'}), 400
         labels = payload.get('labels')
         if (not isinstance(labels, list) or not 1 <= len(labels) <= 64
                 or any(not isinstance(label, str) or not re.fullmatch(r'[a-z][a-z0-9 -]{0,63}', label)
@@ -176,8 +182,11 @@ def _qwen_vl_app(args):
             'If the object is ambiguous, too small, not visible, or none of the listed categories fits, '
             'choose unknown. Do not guess a television simply because an object is rectangular. '
             'Choose exactly one category from: ' + ', '.join(labels) + '. '
-            'Return ONLY a JSON object with one key, for example {"label":"chair"}.'
         )
+        if target_query is not None:
+            prompt += goal_verification_prompt(target_query)
+        else:
+            prompt += 'Return ONLY a JSON object with one key, for example {"label":"chair"}.'
         messages = [{'role': 'user', 'content': [
             {'type': 'image', 'image': image}, {'type': 'text', 'text': prompt},
         ]}]
@@ -186,7 +195,9 @@ def _qwen_vl_app(args):
         inputs = processor(text=[text], images=[image], return_tensors='pt',
                            min_pixels=64 * 64, max_pixels=args.vl_max_pixels).to(model.device)
         with torch.inference_mode():
-            generated = model.generate(**inputs, max_new_tokens=args.vl_max_new_tokens, do_sample=False)
+            generated = model.generate(**inputs, max_new_tokens=(
+                max(64, args.vl_max_new_tokens) if target_query is not None else args.vl_max_new_tokens
+            ), do_sample=False)
         raw_text = processor.batch_decode(
             generated[:, inputs['input_ids'].shape[1]:], skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
@@ -196,14 +207,21 @@ def _qwen_vl_app(args):
         if cleaned.startswith('```') and cleaned.endswith('```'):
             cleaned = re.sub(r'^```(?:json)?\s*', '', cleaned)[:-3].strip()
         reason = 'classified'
+        goal_score = None
+        verification_status = 'not_requested'
         try:
             result = json.loads(cleaned)
             label = result.get('label') if isinstance(result, dict) else None
             if label not in labels:
                 raise ValueError('label is outside requested categories')
+            if target_query is not None:
+                goal_score = parse_goal_score(result.get('goal_match_score')) if label != 'unknown' else None
+                verification_status = 'verified' if goal_score is not None else 'abstained'
         except (ValueError, TypeError):
             label, reason = 'unknown', 'invalid_output'
+            verification_status = 'invalid_output' if target_query is not None else 'not_requested'
         return jsonify({'label': label, 'model': args.qwen_vl_model,
+                        'goal_match_score': goal_score, 'goal_verification_status': verification_status,
                         'raw_text': raw_text, 'reason': reason})
 
     return app

@@ -6,6 +6,7 @@ import sys
 from datetime import datetime
 
 from grutopia.core.util import has_display
+from grutopia_extension.interactive_navigation.goal_matching import GoalMatchingConfig
 from grutopia.demo.go2_point_navigation import build_objects
 from grutopia_extension.configs.objects import (
     FixedCubeCfg,
@@ -43,6 +44,12 @@ GRSCENE_FLOOR_TOP = 0.15
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--target', default='refrigerator')
+    parser.add_argument('--goal-matching', choices=('robust', 'legacy'), default='robust')
+    parser.add_argument('--description-verification', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--goal-match-confidence', type=float, default=0.80)
+    parser.add_argument('--goal-embedding-margin', type=float, default=0.03)
+    parser.add_argument('--goal-node-confidence', type=float, default=0.10)
+    parser.add_argument('--goal-embedding-threshold', type=float, default=0.24)
     parser.add_argument(
         '--scene',
         choices=('grscene', 'programmatic'),
@@ -203,6 +210,13 @@ def main():
         profile,
         Go2SemanticExplorationRunConfig(
             target_query=args.target,
+            goal_matching=GoalMatchingConfig(
+                mode=args.goal_matching, verify_descriptions=args.description_verification,
+                description_threshold=args.goal_match_confidence,
+                embedding_margin=args.goal_embedding_margin,
+                min_node_confidence=args.goal_node_confidence,
+            ),
+            target_embedding_threshold=args.goal_embedding_threshold,
             ground_height=GRSCENE_FLOOR_TOP if args.scene == 'grscene' else 0.0,
             gpu=args.gpu,
             perception_gpu=args.perception_gpu,
