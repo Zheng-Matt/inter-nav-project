@@ -38,6 +38,17 @@ def parse_args():
     return args
 
 
+def repository_revision(path):
+    """Archives inside a checkout must not inherit that checkout's revision."""
+    root = Path(path).resolve()
+    if not (root / '.git').exists():
+        return None
+    result = subprocess.run(
+        ['git', '-C', str(root), 'rev-parse', 'HEAD'], capture_output=True, text=True
+    )
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
 def worker(args):
     root = args.baseline_root if args.worker == 'legacy' and args.baseline_root else Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(root))
@@ -212,10 +223,6 @@ def main():
         )
         results.append(json.loads(result.stdout))
 
-    def revision(path):
-        result = subprocess.run(['git', '-C', str(path), 'rev-parse', 'HEAD'], capture_output=True, text=True)
-        return result.stdout.strip() if result.returncode == 0 else None
-
     payload = dict(
         schema_version=1,
         scope='single-observation object matching; no navigation evaluation',
@@ -223,9 +230,9 @@ def main():
         dataset_provenance=dataset.get('provenance'),
         dataset_sha256=hashlib.sha256(args.dataset.read_bytes()).hexdigest(),
         python=sys.version,
-        baseline_revision=revision(args.baseline_root) if args.baseline_root else None,
+        baseline_revision=repository_revision(args.baseline_root) if args.baseline_root else None,
         baseline_root=str(args.baseline_root) if args.baseline_root else None,
-        implementation_revision=revision(Path(__file__).resolve().parents[2]),
+        implementation_revision=repository_revision(Path(__file__).resolve().parents[2]),
         results=results,
     )
     (output / 'comparison.json').write_text(json.dumps(payload, indent=2, ensure_ascii=False) + '\n')
