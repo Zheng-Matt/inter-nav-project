@@ -579,15 +579,18 @@ class OpenVocabularyPerception:
                 # Floor masks must not produce semantic votes or target cues.
                 # Unknown floor height or zero clearance disables this check.
                 if (use_vl and robust and self.config.semantic_ground_height is not None
-                        and self.config.semantic_ground_clearance > 0
-                        and float(np.percentile(world_points[:, 2], 95))
-                        <= self.config.semantic_ground_height + self.config.semantic_ground_clearance):
-                    if self.last_debug_frame is not None:
-                        self.last_debug_frame['rejected_geometry'].append({
-                            'bbox_xyxy': list(bbox), 'raw_label': label,
-                            'reason': 'ground_surface', 'proposal_source': proposal_source,
-                        })
-                    continue
+                        and self.config.semantic_ground_clearance > 0):
+                    height_p95 = float(np.percentile(world_points[:, 2], 95))
+                    cutoff = self.config.semantic_ground_height + self.config.semantic_ground_clearance
+                    if height_p95 <= cutoff:
+                        if self.last_debug_frame is not None:
+                            self.last_debug_frame['rejected_geometry'].append({
+                                'bbox_xyxy': list(bbox), 'raw_label': label,
+                                'reason': 'ground_surface', 'proposal_source': proposal_source,
+                                'height_p95_m': height_p95, 'cutoff_m': cutoff,
+                                'valid_points': len(world_points),
+                            })
+                        continue
                 classification = {}
                 verify_goal = (robust and goal and goal.descriptive
                                and self.config.goal_matching.verify_descriptions)

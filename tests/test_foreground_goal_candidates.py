@@ -50,6 +50,8 @@ class ForegroundGoalCandidateTest(unittest.TestCase):
                 self.assertEqual(p.last_target_cues, [])
                 self.assertEqual(p.last_debug_frame['mapped'], [])
                 self.assertEqual(p.last_debug_frame['rejected_geometry'][0]['reason'], 'ground_surface')
+                self.assertAlmostEqual(p.last_debug_frame['rejected_geometry'][0]['height_p95_m'], .151)
+                self.assertAlmostEqual(p.last_debug_frame['rejected_geometry'][0]['cutoff_m'], .17)
 
     def test_ground_height_is_world_relative_and_unknown_height_disables_guard(self):
         p, rgb, depth, points = self.pipeline(height=1.151)
