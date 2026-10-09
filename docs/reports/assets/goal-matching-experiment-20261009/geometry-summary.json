@@ -1,0 +1,82 @@
+{
+  "schema_version": 2,
+  "status": "succeeded",
+  "reason": "goal_reached",
+  "arrival_verified": true,
+  "step": 909,
+  "max_steps": 2400,
+  "exit_code": 0,
+  "error_type": null,
+  "target_query": "fridge",
+  "target_found": true,
+  "target_confirmed": true,
+  "target_label_support": 33,
+  "target_match_method": "lexical",
+  "rejected_provisional_targets": 0,
+  "target_node": "object:refrigerator:0",
+  "target_label": "refrigerator",
+  "target_position": [
+    11.683441046512488,
+    -2.653673793330337,
+    0.5378399852550391
+  ],
+  "approach_goal": [
+    10.850000000000001,
+    -2.55,
+    0.4123048484325409
+  ],
+  "final_position": [
+    10.393396377563477,
+    -3.0805187225341797,
+    0.37890127301216125
+  ],
+  "goal_distance_m": 0.7,
+  "target_distance_m": 1.3588,
+  "arrival_threshold_m": 0.7,
+  "arrival_margin_m": 0.0,
+  "arrival_rule": "xy_distance_to_approach_goal",
+  "profile_goal": [
+    12.0,
+    -2.6,
+    0.4
+  ],
+  "profile_goal_distance_min_m": 1.6769,
+  "profile_goal_distance_min_step": 909,
+  "profile_goal_distance_final_m": 1.6769,
+  "perception": {
+    "requested_mode": "isaac",
+    "effective_mode": "isaac",
+    "open_vocabulary_frames": 0,
+    "open_vocabulary_failures": 0
+  },
+  "planning": {
+    "plans": 2,
+    "replans": 1,
+    "planning_failures": 0
+  },
+  "voronoi": {
+    "incremental_updates": 2,
+    "incremental_fallbacks": 20,
+    "incremental_fallback_reasons": {
+      "window_fraction": 20
+    },
+    "incremental_seam_checks": 63,
+    "incremental_seam_mismatches": 38,
+    "incremental_verification_checks": 0,
+    "incremental_verification_mismatches": 0,
+    "incremental_verification_mismatched_cells": 0,
+    "last_verification_mismatch_revision": null,
+    "incremental_window_evaluations": 22,
+    "incremental_max_window_fraction": 1.0,
+    "window_to_changed_ratio": 66.9,
+    "incremental_seconds": 0.272,
+    "full_build_seconds": 0.767,
+    "verification_seconds": 0.0
+  },
+  "completion_recorded": true,
+  "run_id": "geometry-retry",
+  "started_at": "2026-10-09T07:25:30+00:00",
+  "finished_at": "2026-10-09T07:27:54+00:00",
+  "artifacts_complete": true,
+  "artifact_errors": []
+}

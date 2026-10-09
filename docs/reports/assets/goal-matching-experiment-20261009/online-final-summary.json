@@ -1,0 +1,82 @@
+{
+  "schema_version": 2,
+  "status": "succeeded",
+  "reason": "goal_reached",
+  "arrival_verified": true,
+  "step": 767,
+  "max_steps": 1200,
+  "exit_code": 0,
+  "error_type": null,
+  "target_query": "a large appliance used to keep food cold",
+  "target_found": true,
+  "target_confirmed": true,
+  "target_label_support": 23,
+  "target_match_method": "description",
+  "rejected_provisional_targets": 0,
+  "target_node": "object:refrigerator:0",
+  "target_label": "refrigerator",
+  "target_position": [
+    10.534838593524436,
+    -1.677529620087665,
+    0.7002575630727021
+  ],
+  "approach_goal": [
+    10.15,
+    -1.6500000000000004,
+    0.5608245730400085
+  ],
+  "final_position": [
+    9.163381576538086,
+    -1.166336178779602,
+    0.5111710429191589
+  ],
+  "goal_distance_m": 1.0988,
+  "target_distance_m": 1.4636,
+  "arrival_threshold_m": 1.1,
+  "arrival_margin_m": 0.0012,
+  "arrival_rule": "xy_distance_to_approach_goal",
+  "profile_goal": [
+    10.2,
+    -1.76,
+    0.55
+  ],
+  "profile_goal_distance_min_m": 1.1946,
+  "profile_goal_distance_min_step": 767,
+  "profile_goal_distance_final_m": 1.1946,
+  "perception": {
+    "requested_mode": "open_vocab",
+    "effective_mode": "open_vocab",
+    "open_vocabulary_frames": 32,
+    "open_vocabulary_failures": 0
+  },
+  "planning": {
+    "plans": 2,
+    "replans": 1,
+    "planning_failures": 0
+  },
+  "voronoi": {
+    "incremental_updates": 1,
+    "incremental_fallbacks": 19,
+    "incremental_fallback_reasons": {
+      "window_fraction": 19
+    },
+    "incremental_seam_checks": 32,
+    "incremental_seam_mismatches": 31,
+    "incremental_verification_checks": 0,
+    "incremental_verification_mismatches": 0,
+    "incremental_verification_mismatched_cells": 0,
+    "last_verification_mismatch_revision": null,
+    "incremental_window_evaluations": 20,
+    "incremental_max_window_fraction": 1.0,
+    "window_to_changed_ratio": 20.99,
+    "incremental_seconds": 0.425,
+    "full_build_seconds": 0.772,
+    "verification_seconds": 0.0
+  },
+  "completion_recorded": true,
+  "run_id": "minimal-online-revised",
+  "started_at": "2026-10-09T07:56:06+00:00",
+  "finished_at": "2026-10-09T07:57:57+00:00",
+  "artifacts_complete": true,
+  "artifact_errors": []
+}

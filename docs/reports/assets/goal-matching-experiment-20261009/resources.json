@@ -1,0 +1,1092 @@
+{
+  "qwen-round3.resource": {
+    "command": [
+      "/data20t/embodied/wzj/internnav_data/envs/qwen35_caption/bin/python",
+      "-u",
+      "grutopia/demo/serve_semantic_perception.py",
+      "qwen-vl",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "12186",
+      "--device",
+      "cuda:0",
+      "--qwen-vl-model",
+      "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "b9c732bc4da8ffd2aa4c00b74e07522093343f32",
+    "CUDA_VISIBLE_DEVICES": "7",
+    "started_utc": "2026-10-09T07:54:43.198543+00:00",
+    "timeout_seconds": 480.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 4062,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      }
+    },
+    "pid": 2844083,
+    "stop_reason": "requested_cleanup",
+    "exit_code": -15,
+    "wall_seconds": 249.022,
+    "gpu_peak_total_mib": {
+      "0": 4494,
+      "5": 4062,
+      "7": 17485
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 19,
+        "utilization_percent": 74
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      }
+    },
+    "finished_utc": "2026-10-09T07:58:52.251740+00:00"
+  },
+  "heldout-crop-comparison.resource": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/isaaclab/bin/python",
+      "grutopia/demo/evaluate_goal_matching.py",
+      "--dataset",
+      "grutopia/results/goal_matching_experiment_20261009_152404/heldout-crop-dataset/dataset.json",
+      "--baseline-root",
+      "grutopia/results/goal_matching_smoke_20261009_1425/baseline-main",
+      "--live-qwen-url",
+      "http://127.0.0.1:12186/classify",
+      "--record-dir",
+      "grutopia/results/goal_matching_experiment_20261009_152404/heldout-crop-comparison"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "b9c732bc4da8ffd2aa4c00b74e07522093343f32",
+    "CUDA_VISIBLE_DEVICES": "7",
+    "started_utc": "2026-10-09T07:57:04.586722+00:00",
+    "timeout_seconds": 180.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 4494,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 4062,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17483,
+        "utilization_percent": 44
+      }
+    },
+    "pid": 2852432,
+    "exit_code": 0,
+    "wall_seconds": 26.98,
+    "gpu_peak_total_mib": {
+      "0": 4494,
+      "5": 4062,
+      "7": 17483
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 4494,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 4062,
+        "utilization_percent": 64
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17483,
+        "utilization_percent": 0
+      }
+    },
+    "finished_utc": "2026-10-09T07:57:31.595851+00:00"
+  },
+  "minimal-online-legacy.resource": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/isaaclab/bin/python",
+      "-u",
+      "grutopia/results/goal_matching_experiment_20261009_152404/diagnostic-navigation.py",
+      "--scene",
+      "grscene",
+      "--profile",
+      "grutopia/results/goal_matching_experiment_20261009_152404/minimal-profile.json",
+      "--gpu",
+      "0",
+      "--perception-gpu",
+      "5",
+      "--qwen-device",
+      "cuda:7",
+      "--headless",
+      "--no-qwen",
+      "--detection-mode",
+      "open_vocab",
+      "--semantic-classifier",
+      "qwen-vl",
+      "--grounding-dino-url",
+      "http://127.0.0.1:12187/gdino",
+      "--mobile-sam-url",
+      "http://127.0.0.1:12188/mobile_sam",
+      "--qwen-vl-url",
+      "http://127.0.0.1:12186/classify",
+      "--qwen-vl-max-candidates",
+      "4",
+      "--target",
+      "a large appliance used to keep food cold",
+      "--goal-matching",
+      "legacy",
+      "--max-steps",
+      "1200",
+      "--mapping-warmup-steps",
+      "80",
+      "--record-every",
+      "80",
+      "--record-raw-rgb",
+      "--record-dir",
+      "grutopia/results/goal_matching_experiment_20261009_152404/minimal-online-legacy"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "0eeb29b006bee4c6eefb823a060892a164a6e582",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "started_utc": "2026-10-09T07:51:02.735520+00:00",
+    "timeout_seconds": 240.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 1744,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17271,
+        "utilization_percent": 0
+      }
+    },
+    "pid": 2822992,
+    "exit_code": 0,
+    "wall_seconds": 126.767,
+    "gpu_peak_total_mib": {
+      "0": 4494,
+      "5": 4062,
+      "7": 17493
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 4062,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17493,
+        "utilization_percent": 0
+      }
+    },
+    "finished_utc": "2026-10-09T07:53:09.535394+00:00"
+  },
+  "clean-crop-revised.resource": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/isaaclab/bin/python",
+      "grutopia/demo/evaluate_goal_matching.py",
+      "--dataset",
+      "grutopia/results/goal_matching_experiment_20261009_152404/clean-crop-dataset/dataset.json",
+      "--baseline-root",
+      "grutopia/results/goal_matching_smoke_20261009_1425/baseline-main",
+      "--live-qwen-url",
+      "http://127.0.0.1:12186/classify",
+      "--record-dir",
+      "grutopia/results/goal_matching_experiment_20261009_152404/clean-crop-revised"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "b9c732bc4da8ffd2aa4c00b74e07522093343f32",
+    "CUDA_VISIBLE_DEVICES": "7",
+    "started_utc": "2026-10-09T07:55:19.117903+00:00",
+    "timeout_seconds": 180.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 4062,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17271,
+        "utilization_percent": 0
+      }
+    },
+    "pid": 2844468,
+    "exit_code": 0,
+    "wall_seconds": 17.676,
+    "gpu_peak_total_mib": {
+      "0": 18,
+      "5": 4062,
+      "7": 17483
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 4062,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17483,
+        "utilization_percent": 67
+      }
+    },
+    "finished_utc": "2026-10-09T07:55:36.826083+00:00"
+  },
+  "geometry.resource": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/isaaclab/bin/python",
+      "-u",
+      "grutopia/results/goal_matching_experiment_20261009_152404/diagnostic-navigation.py",
+      "--scene",
+      "programmatic",
+      "--start",
+      "10",
+      "-2.6",
+      "0.40",
+      "--goal",
+      "12",
+      "-2.6",
+      "0.40",
+      "--gpu",
+      "0",
+      "--perception-gpu",
+      "5",
+      "--qwen-device",
+      "cuda:7",
+      "--headless",
+      "--detection-mode",
+      "isaac",
+      "--no-qwen",
+      "--target",
+      "fridge",
+      "--goal-matching",
+      "robust",
+      "--max-steps",
+      "2400",
+      "--mapping-warmup-steps",
+      "80",
+      "--record-every",
+      "120",
+      "--record-raw-rgb",
+      "--record-dir",
+      "grutopia/results/goal_matching_experiment_20261009_152404/geometry-retry"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "0eeb29b006bee4c6eefb823a060892a164a6e582",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "started_utc": "2026-10-09T07:25:07.066240+00:00",
+    "timeout_seconds": 180.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 1302,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 5847,
+        "utilization_percent": 2
+      }
+    },
+    "pid": 2767337,
+    "exit_code": 0,
+    "wall_seconds": 171.184,
+    "gpu_peak_total_mib": {
+      "0": 4474,
+      "5": 1744,
+      "7": 17271
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 1744,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17271,
+        "utilization_percent": 0
+      }
+    },
+    "finished_utc": "2026-10-09T07:27:58.285543+00:00"
+  },
+  "minimal-online-revised.resource": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/isaaclab/bin/python",
+      "-u",
+      "grutopia/results/goal_matching_experiment_20261009_152404/diagnostic-navigation.py",
+      "--scene",
+      "grscene",
+      "--profile",
+      "grutopia/results/goal_matching_experiment_20261009_152404/minimal-profile.json",
+      "--gpu",
+      "0",
+      "--perception-gpu",
+      "5",
+      "--qwen-device",
+      "cuda:7",
+      "--headless",
+      "--no-qwen",
+      "--detection-mode",
+      "open_vocab",
+      "--semantic-classifier",
+      "qwen-vl",
+      "--grounding-dino-url",
+      "http://127.0.0.1:12187/gdino",
+      "--mobile-sam-url",
+      "http://127.0.0.1:12188/mobile_sam",
+      "--qwen-vl-url",
+      "http://127.0.0.1:12186/classify",
+      "--qwen-vl-max-candidates",
+      "4",
+      "--target",
+      "a large appliance used to keep food cold",
+      "--goal-matching",
+      "robust",
+      "--max-steps",
+      "1200",
+      "--mapping-warmup-steps",
+      "80",
+      "--record-every",
+      "80",
+      "--record-raw-rgb",
+      "--record-dir",
+      "grutopia/results/goal_matching_experiment_20261009_152404/minimal-online-revised"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "b9c732bc4da8ffd2aa4c00b74e07522093343f32",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "started_utc": "2026-10-09T07:56:05.848105+00:00",
+    "timeout_seconds": 240.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 4062,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17483,
+        "utilization_percent": 0
+      }
+    },
+    "pid": 2845254,
+    "exit_code": 0,
+    "wall_seconds": 114.243,
+    "gpu_peak_total_mib": {
+      "0": 4494,
+      "5": 4062,
+      "7": 17485
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 4062,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17485,
+        "utilization_percent": 0
+      }
+    },
+    "finished_utc": "2026-10-09T07:58:00.121520+00:00"
+  },
+  "sam-round2.resource": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/CapNav/bin/python",
+      "-u",
+      "grutopia/demo/serve_semantic_perception.py",
+      "mobile-sam",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "12188",
+      "--device",
+      "cuda:0"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "0eeb29b006bee4c6eefb823a060892a164a6e582",
+    "CUDA_VISIBLE_DEVICES": "5",
+    "started_utc": "2026-10-09T07:50:22.285671+00:00",
+    "timeout_seconds": 720.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      }
+    },
+    "pid": 2822078,
+    "stop_reason": "requested_cleanup",
+    "exit_code": -15,
+    "wall_seconds": 509.782,
+    "gpu_peak_total_mib": {
+      "0": 4494,
+      "5": 4062,
+      "7": 17493
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17485,
+        "utilization_percent": 0
+      }
+    },
+    "finished_utc": "2026-10-09T07:58:52.126022+00:00"
+  },
+  "dino.resource": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/CapNav/bin/python",
+      "-u",
+      "grutopia/demo/serve_semantic_perception.py",
+      "grounding-dino",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "12187",
+      "--device",
+      "cuda:0"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "0eeb29b006bee4c6eefb823a060892a164a6e582",
+    "CUDA_VISIBLE_DEVICES": "5",
+    "started_utc": "2026-10-09T07:24:04.938687+00:00",
+    "timeout_seconds": 1200.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      }
+    },
+    "pid": 2766258,
+    "stop_reason": "timeout",
+    "exit_code": -15,
+    "wall_seconds": 1200.345,
+    "gpu_peak_total_mib": {
+      "0": 17438,
+      "5": 4062,
+      "7": 17485
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 19,
+        "utilization_percent": 31
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17485,
+        "utilization_percent": 0
+      }
+    },
+    "finished_utc": "2026-10-09T07:44:05.315679+00:00"
+  },
+  "sam.resource": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/CapNav/bin/python",
+      "-u",
+      "grutopia/demo/serve_semantic_perception.py",
+      "mobile-sam",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "12188",
+      "--device",
+      "cuda:0"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "0eeb29b006bee4c6eefb823a060892a164a6e582",
+    "CUDA_VISIBLE_DEVICES": "5",
+    "started_utc": "2026-10-09T07:24:04.937980+00:00",
+    "timeout_seconds": 1200.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      }
+    },
+    "pid": 2766260,
+    "stop_reason": "timeout",
+    "exit_code": -15,
+    "wall_seconds": 1200.282,
+    "gpu_peak_total_mib": {
+      "0": 17438,
+      "5": 4062,
+      "7": 17485
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17485,
+        "utilization_percent": 0
+      }
+    },
+    "finished_utc": "2026-10-09T07:44:05.274131+00:00"
+  },
+  "dino-round2.resource": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/CapNav/bin/python",
+      "-u",
+      "grutopia/demo/serve_semantic_perception.py",
+      "grounding-dino",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "12187",
+      "--device",
+      "cuda:0"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "0eeb29b006bee4c6eefb823a060892a164a6e582",
+    "CUDA_VISIBLE_DEVICES": "5",
+    "started_utc": "2026-10-09T07:50:22.289800+00:00",
+    "timeout_seconds": 720.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      }
+    },
+    "pid": 2822082,
+    "stop_reason": "requested_cleanup",
+    "exit_code": -15,
+    "wall_seconds": 509.846,
+    "gpu_peak_total_mib": {
+      "0": 4494,
+      "5": 4062,
+      "7": 17493
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17485,
+        "utilization_percent": 0
+      }
+    },
+    "finished_utc": "2026-10-09T07:58:52.165779+00:00"
+  },
+  "online-robust.resource": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/isaaclab/bin/python",
+      "-u",
+      "grutopia/results/goal_matching_experiment_20261009_152404/diagnostic-navigation.py",
+      "--scene",
+      "grscene",
+      "--profile",
+      "grutopia/results/goal_matching_experiment_20261009_152404/near-start-profile.json",
+      "--gpu",
+      "0",
+      "--perception-gpu",
+      "5",
+      "--qwen-device",
+      "cuda:7",
+      "--headless",
+      "--no-qwen",
+      "--detection-mode",
+      "open_vocab",
+      "--semantic-classifier",
+      "qwen-vl",
+      "--grounding-dino-url",
+      "http://127.0.0.1:12187/gdino",
+      "--mobile-sam-url",
+      "http://127.0.0.1:12188/mobile_sam",
+      "--qwen-vl-url",
+      "http://127.0.0.1:12186/classify",
+      "--qwen-vl-max-candidates",
+      "4",
+      "--target",
+      "a large appliance used to keep food cold",
+      "--goal-matching",
+      "robust",
+      "--max-steps",
+      "640",
+      "--mapping-warmup-steps",
+      "80",
+      "--record-every",
+      "80",
+      "--record-raw-rgb",
+      "--record-dir",
+      "grutopia/results/goal_matching_experiment_20261009_152404/online-robust"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "0eeb29b006bee4c6eefb823a060892a164a6e582",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "started_utc": "2026-10-09T07:32:37.334311+00:00",
+    "timeout_seconds": 300.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 4602,
+        "utilization_percent": 11
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 1744,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17271,
+        "utilization_percent": 0
+      }
+    },
+    "pid": 2794234,
+    "stop_reason": "timeout",
+    "exit_code": -9,
+    "wall_seconds": 317.906,
+    "gpu_peak_total_mib": {
+      "0": 5141,
+      "5": 1744,
+      "7": 17271
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 39
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 1744,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17271,
+        "utilization_percent": 0
+      }
+    },
+    "finished_utc": "2026-10-09T07:37:55.272778+00:00"
+  },
+  "qwen.resource": {
+    "command": [
+      "/data20t/embodied/wzj/internnav_data/envs/qwen35_caption/bin/python",
+      "-u",
+      "grutopia/demo/serve_semantic_perception.py",
+      "qwen-vl",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "12186",
+      "--device",
+      "cuda:0",
+      "--qwen-vl-model",
+      "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "0eeb29b006bee4c6eefb823a060892a164a6e582",
+    "CUDA_VISIBLE_DEVICES": "7",
+    "started_utc": "2026-10-09T07:24:04.937967+00:00",
+    "timeout_seconds": 1200.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      }
+    },
+    "pid": 2766259,
+    "stop_reason": "timeout",
+    "exit_code": -15,
+    "wall_seconds": 1200.697,
+    "gpu_peak_total_mib": {
+      "0": 17438,
+      "5": 4062,
+      "7": 17485
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 19,
+        "utilization_percent": 13
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 19,
+        "utilization_percent": 7
+      }
+    },
+    "finished_utc": "2026-10-09T07:44:05.668003+00:00"
+  },
+  "qwen-round2.resource": {
+    "command": [
+      "/data20t/embodied/wzj/internnav_data/envs/qwen35_caption/bin/python",
+      "-u",
+      "grutopia/demo/serve_semantic_perception.py",
+      "qwen-vl",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "12186",
+      "--device",
+      "cuda:0",
+      "--qwen-vl-model",
+      "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "0eeb29b006bee4c6eefb823a060892a164a6e582",
+    "CUDA_VISIBLE_DEVICES": "7",
+    "started_utc": "2026-10-09T07:50:22.289325+00:00",
+    "timeout_seconds": 720.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      }
+    },
+    "pid": 2822080,
+    "stop_reason": "requested_cleanup",
+    "exit_code": -15,
+    "wall_seconds": 244.198,
+    "gpu_peak_total_mib": {
+      "0": 4494,
+      "5": 4062,
+      "7": 17493
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 4062,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 19,
+        "utilization_percent": 0
+      }
+    },
+    "finished_utc": "2026-10-09T07:54:26.521340+00:00"
+  },
+  "clean-crop-comparison.resource": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/isaaclab/bin/python",
+      "grutopia/demo/evaluate_goal_matching.py",
+      "--dataset",
+      "grutopia/results/goal_matching_experiment_20261009_152404/clean-crop-dataset/dataset.json",
+      "--baseline-root",
+      "grutopia/results/goal_matching_smoke_20261009_1425/baseline-main",
+      "--live-qwen-url",
+      "http://127.0.0.1:12186/classify",
+      "--record-dir",
+      "grutopia/results/goal_matching_experiment_20261009_152404/clean-crop-comparison"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "0eeb29b006bee4c6eefb823a060892a164a6e582",
+    "CUDA_VISIBLE_DEVICES": "7",
+    "started_utc": "2026-10-09T07:52:04.778219+00:00",
+    "timeout_seconds": 180.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 4494,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 4062,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17423,
+        "utilization_percent": 32
+      }
+    },
+    "pid": 2832188,
+    "exit_code": 0,
+    "wall_seconds": 16.638,
+    "gpu_peak_total_mib": {
+      "0": 4494,
+      "5": 4062,
+      "7": 17493
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 4494,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 4062,
+        "utilization_percent": 64
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17493,
+        "utilization_percent": 2
+      }
+    },
+    "finished_utc": "2026-10-09T07:52:21.448501+00:00"
+  },
+  "minimal-online-robust.resource": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/isaaclab/bin/python",
+      "-u",
+      "grutopia/results/goal_matching_experiment_20261009_152404/diagnostic-navigation.py",
+      "--scene",
+      "grscene",
+      "--profile",
+      "grutopia/results/goal_matching_experiment_20261009_152404/minimal-profile.json",
+      "--gpu",
+      "0",
+      "--perception-gpu",
+      "5",
+      "--qwen-device",
+      "cuda:7",
+      "--headless",
+      "--no-qwen",
+      "--detection-mode",
+      "open_vocab",
+      "--semantic-classifier",
+      "qwen-vl",
+      "--grounding-dino-url",
+      "http://127.0.0.1:12187/gdino",
+      "--mobile-sam-url",
+      "http://127.0.0.1:12188/mobile_sam",
+      "--qwen-vl-url",
+      "http://127.0.0.1:12186/classify",
+      "--qwen-vl-max-candidates",
+      "4",
+      "--target",
+      "a large appliance used to keep food cold",
+      "--goal-matching",
+      "robust",
+      "--max-steps",
+      "1200",
+      "--mapping-warmup-steps",
+      "80",
+      "--record-every",
+      "80",
+      "--record-raw-rgb",
+      "--record-dir",
+      "grutopia/results/goal_matching_experiment_20261009_152404/minimal-online-robust"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "commit": "0eeb29b006bee4c6eefb823a060892a164a6e582",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "started_utc": "2026-10-09T07:42:10.736660+00:00",
+    "timeout_seconds": 240.0,
+    "gpu_initial": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 1744,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17271,
+        "utilization_percent": 0
+      }
+    },
+    "pid": 2806212,
+    "exit_code": 0,
+    "wall_seconds": 103.808,
+    "gpu_peak_total_mib": {
+      "0": 4494,
+      "5": 4062,
+      "7": 17485
+    },
+    "gpu_final": {
+      "0": {
+        "uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+        "memory_mib": 18,
+        "utilization_percent": 0
+      },
+      "5": {
+        "uuid": "GPU-89b5a6fb-199b-3b70-cc26-1fa2a933d0bf",
+        "memory_mib": 4062,
+        "utilization_percent": 0
+      },
+      "7": {
+        "uuid": "GPU-768b855b-1c99-2b70-fae5-1ad60f13a35c",
+        "memory_mib": 17485,
+        "utilization_percent": 0
+      }
+    },
+    "finished_utc": "2026-10-09T07:43:54.576888+00:00"
+  }
+}

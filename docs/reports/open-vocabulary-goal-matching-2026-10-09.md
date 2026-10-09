@@ -1,6 +1,6 @@
 # Open-vocabulary goal matching：实现与验证（2026-10-09）
 
-初版实现已完成 CPU 验证，独立分支为 `improve-open-vocabulary-goal-matching`，已建立 [draft PR #1](https://github.com/Zheng-Matt/inter-nav-project/pull/1)。本报告记录初版 CPU 实现阶段；后续实际 GPU 0 测试见 [smoke 报告](open-vocabulary-goal-matching-smoke-2026-10-09.md)：三种正查询通过，但属性反例、八帧确认及导航到达未通过。不宣称真实目标准确率或导航成功率提升。
+初版实现已完成 CPU 验证，独立分支为 `improve-open-vocabulary-goal-matching`，已建立 [draft PR #1](https://github.com/Zheng-Matt/inter-nav-project/pull/1)。本报告记录初版 CPU 实现阶段；后续实际 GPU 0 测试见 [smoke 报告](open-vocabulary-goal-matching-smoke-2026-10-09.md)：三种正查询通过，但属性反例、八帧确认及导航到达未通过。后续 GPU 5/7 在线单资产验证及属性核验调整见 [续测报告](open-vocabulary-goal-matching-online-2026-10-09.md)。不宣称一般真实目标准确率或导航成功率提升。
 
 ## 现有调用链与基线
 
@@ -44,7 +44,7 @@
 | `--goal-embedding-threshold` | 0.24 | CLIP 临时目标最低余弦相似度 |
 | `--goal-embedding-margin` | 0.03 | 至少两个候选时，第一名与第二名的最低间隔 |
 
-运行 manifest 会记录嵌套 `GoalMatchingConfig`，Qwen 健康响应新增 `goal_verification` 能力字段。类别请求保持原来的生成预算；描述请求生成预算至少 64 tokens，以容纳两个 JSON 字段。
+运行 manifest 会记录嵌套 `GoalMatchingConfig`，Qwen 健康响应新增 `goal_verification` 能力字段。类别请求保持原来的生成预算；初版描述请求生成预算至少 64 tokens；续测版本增加可见外观字段后为至少 128 tokens，见续测报告。
 
 ## 已完成验证
 

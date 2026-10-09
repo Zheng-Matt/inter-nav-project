@@ -40,7 +40,7 @@ Qwen3-VL-8B-Instruct 对一个人工检查的深色双门冰箱图像作五种�
 
 - 目标 `object:refrigerator:0` 被正确找到并确认，标签支持 20；规划 2 次，失败 0。
 - 第 479 步到达运行上限：`global_step_limit`。最终距接近点 0.8055 m，门槛 0.7000 m，差 0.1055 m；到达 FAIL。
-- `run_summary.json` 的语义退出码为 2，但原 CLI 的 `main()` 返回值未传给进程退出码，因此系统进程退出码为 0。判定以结果事件和 run summary 为准，不能仅检查 shell 退出码。本次没有修改这个既有 CLI 行为。
+- `run_summary.json` 的语义退出码为 2，系统进程退出码却为 0。后续复查确认入口已使用 `sys.exit(main())`；初版报告将原因归为未传递返回值是不准确的，已更正。关闭流程仍需核查。判定以结果事件和 run summary 为准，不能仅检查 shell 退出码。
 
 ## 耗时与资源
 
@@ -110,3 +110,5 @@ curl -fsS http://127.0.0.1:12186/health
 下一步先用无标签 RGB 核查属性误匹配，再进行在线 open_vocab 描述导航。需要单独检查短场景控制器/路径跟踪及 CLI 退出码，并在新的独立输出目录中适当延长导航预算。此次没有通过改变起点或放宽到达/确认门槛补造成功结果。
 
 审核明细：[单图对照](assets/goal-matching-smoke-20261009/live-comparison.json)、[八帧回放](assets/goal-matching-smoke-20261009/replay.json)、[导航结果](assets/goal-matching-smoke-20261009/navigation-summary.json)、[汇总](assets/goal-matching-smoke-20261009/summary.json)。
+
+后续证据见 [GPU 5/7 续测报告](open-vocabulary-goal-matching-online-2026-10-09.md)：相同程序化起点延长预算后第 909 步到达；真实 GRScene 单资产在线描述导航第 767 步到达。无标注 RGB 暴露并部分修正颜色误接受，背景候选混淆仍有残留。
