@@ -72,7 +72,7 @@
 
 复用已有 Qwen3-VL-8B-Instruct、qwen35_caption Python、CapNav DINO/SAM 环境和 isaaclab Python，均 offline/local-files-only。具体模型路径、软件版本沿用 [GPU 0 smoke 环境记录](assets/goal-matching-smoke-20261009/model-environment.json)。模型生成不采样。
 
-服务器最终回归：17 个目标/服务测试、2 个原始 RGB 测试、3 个运行记录测试全部通过，合计 22/22。本地同组也通过。完整本地 suite 为 158 项，156 通过，2 个既有环境错误（缺 torch、缺 G1 profile），与初版/冻结基线所述错误相同。差异空白与修改模块编译检查通过。测试输出见 assets 中的 server/local regression 日志。
+服务器最终回归：17 个目标/服务测试、2 个原始 RGB 测试、3 个运行记录测试全部通过，合计 22/22。本地同组也通过。完整本地 suite 为 158 项，156 通过，2 个既有环境错误（缺 torch、缺 G1 profile），与初版/冻结基线所述错误相同。差异空白与修改模块编译检查通过。测试输出见 [服务器回归](assets/goal-matching-experiment-20261009/server-regression.txt) 和 [本地回归](assets/goal-matching-experiment-20261009/local-regression.txt)。
 
 Isaac 仍有 headless、传感器预热、非有限深度和插件关闭警告，没有 OOM 或此次运行 traceback。legacy 语义结果 exit_code=2，但外层观测到进程 0；CLI 源码确实执行 `sys.exit(main())`，原报告把原因归为没有传递返回值是不准确的。日志停在 Simulation App Shutting Down，返回值冲突的关闭原因尚未定位；自动判定必须读取最终 summary 和 arrival_verified，不能只用进程退出码。
 
