@@ -92,6 +92,10 @@ def parse_args():
     parser.add_argument('--qwen-vl-url', default='http://localhost:12185/classify')
     parser.add_argument('--qwen-vl-timeout', type=float, default=60.0)
     parser.add_argument('--qwen-vl-max-candidates', type=int, default=12)
+    parser.add_argument('--qwen-vl-crop-mode', choices=('masked', 'context'), default='masked',
+                        help='Robust mode hides pixels outside SAM; context restores the original view.')
+    parser.add_argument('--semantic-ground-clearance', type=float, default=0.02,
+                        help='Reject masks within this height above the known floor; 0 disables the filter.')
     parser.add_argument('--target-cues', action=argparse.BooleanOptionalAction, default=True,
                         help='Use DINO target proposals to approach and observe; never count them as class votes.')
     parser.add_argument(
@@ -243,6 +247,8 @@ def main():
             qwen_vl_url=args.qwen_vl_url,
             qwen_vl_timeout=args.qwen_vl_timeout,
             qwen_vl_max_candidates=args.qwen_vl_max_candidates,
+            qwen_vl_crop_mode=args.qwen_vl_crop_mode,
+            semantic_ground_clearance=args.semantic_ground_clearance,
             enable_target_cues=args.target_cues,
             enable_qwen=args.qwen,
             qwen_model=args.qwen_model,

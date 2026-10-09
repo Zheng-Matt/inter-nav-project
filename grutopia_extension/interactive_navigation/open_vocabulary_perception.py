@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import math
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Optional, Sequence, Tuple
@@ -87,6 +88,9 @@ class OpenVocabularyPerceptionConfig:
     qwen_vl_max_candidates: int = 12
     qwen_vl_crop_margin: float = 0.15
     qwen_vl_crop_max_side: int = 384
+    qwen_vl_crop_mode: str = 'masked'
+    semantic_ground_height: Optional[float] = None
+    semantic_ground_clearance: float = 0.02
     proposal_nms_iou: float = 0.80
     goal_matching: GoalMatchingConfig = field(default_factory=GoalMatchingConfig)
 
@@ -97,6 +101,12 @@ class OpenVocabularyPerceptionConfig:
             raise ValueError('Qwen-VL requires a URL and positive timeout')
         if self.qwen_vl_crop_max_side < 64 or self.qwen_vl_max_candidates < 1:
             raise ValueError('Qwen-VL crop size must be >=64 and candidate limit >=1')
+        if self.qwen_vl_crop_mode not in ('context', 'masked'):
+            raise ValueError('Qwen-VL crop mode must be context or masked')
+        if self.semantic_ground_height is not None and not math.isfinite(self.semantic_ground_height):
+            raise ValueError('semantic ground height must be finite or None')
+        if not math.isfinite(self.semantic_ground_clearance) or self.semantic_ground_clearance < 0:
+            raise ValueError('semantic ground clearance must be finite and nonnegative')
         if not 0 <= self.qwen_vl_crop_margin <= 0.5 or not 0 < self.proposal_nms_iou <= 1:
             raise ValueError('invalid Qwen-VL crop margin or proposal NMS threshold')
         if self.request_timeout <= 0:
@@ -399,6 +409,7 @@ class OpenVocabularyPerception:
             'boxes': [],
             'mapped': [],
             'classified': [],
+            'rejected_geometry': [],
             'target_cues': [],
             'item_errors': [],
         }
@@ -565,11 +576,24 @@ class OpenVocabularyPerception:
                 if len(world_points) < self.config.min_points:
                     continue
                 centroid = tuple(float(v) for v in world_points.mean(axis=0))
+                # Floor masks must not produce semantic votes or target cues.
+                # Unknown floor height or zero clearance disables this check.
+                if (use_vl and robust and self.config.semantic_ground_height is not None
+                        and self.config.semantic_ground_clearance > 0
+                        and float(np.percentile(world_points[:, 2], 95))
+                        <= self.config.semantic_ground_height + self.config.semantic_ground_clearance):
+                    if self.last_debug_frame is not None:
+                        self.last_debug_frame['rejected_geometry'].append({
+                            'bbox_xyxy': list(bbox), 'raw_label': label,
+                            'reason': 'ground_surface', 'proposal_source': proposal_source,
+                        })
+                    continue
                 classification = {}
                 verify_goal = (robust and goal and goal.descriptive
                                and self.config.goal_matching.verify_descriptions)
                 if use_vl:
-                    crop = self._qwen_context_crop(image, bbox)
+                    crop_mask = mask if robust and self.config.qwen_vl_crop_mode == 'masked' else None
+                    crop = self._qwen_context_crop(image, bbox, mask=crop_mask)
                     if verify_goal:
                         classification = self.classifier.classify(crop, categories, target_query=str(target))
                     else:
@@ -585,6 +609,7 @@ class OpenVocabularyPerception:
                             'classifier_response': classification.get('raw_text'),
                             'reason': classification.get('reason', 'classified'),
                             'accepted': final_label != 'unknown',
+                            'crop_mode': 'masked' if crop_mask is not None else 'context',
                             'goal_query': goal.text if goal and goal.descriptive else None,
                             'goal_match_score': parse_goal_score(classification.get('goal_match_score')) if verify_goal else None,
                             'goal_verification_status': classification.get('goal_verification_status', 'unavailable'),
@@ -643,8 +668,8 @@ class OpenVocabularyPerception:
             kept.append(proposal)
         return kept
 
-    def _qwen_context_crop(self, image: np.ndarray, bbox: BBox) -> np.ndarray:
-        """Preserve real RGB background; mark the original bbox inside a padded crop."""
+    def _qwen_context_crop(self, image: np.ndarray, bbox: BBox, mask: Optional[np.ndarray] = None) -> np.ndarray:
+        """Keep object colors; optionally hide pixels outside the existing SAM mask."""
         height, width = image.shape[:2]
         x1, y1, x2, y2 = bbox
         margin = self.config.qwen_vl_crop_margin
@@ -655,6 +680,14 @@ class OpenVocabularyPerception:
         crop = image[top:bottom, left:right].copy()
         if crop.size == 0:
             raise ValueError('cannot classify an empty context crop')
+        if mask is not None:
+            mask = np.asarray(mask)
+            if mask.shape != image.shape[:2] or mask.dtype != np.bool_:
+                raise ValueError('Qwen foreground mask must be boolean and align with RGB')
+            foreground = mask[top:bottom, left:right]
+            if not foreground.any():
+                raise ValueError('cannot classify an empty foreground mask')
+            crop[~foreground] = (127, 127, 127)
         cv2.rectangle(crop, (max(0, int(x1) - left), max(0, int(y1) - top)), (min(right - left - 1, int(x2) - left), min(bottom - top - 1, int(y2) - top)), (255, 0, 0), 1)
         scale = min(1.0, self.config.qwen_vl_crop_max_side / max(crop.shape[:2]))
         if scale < 1.0:

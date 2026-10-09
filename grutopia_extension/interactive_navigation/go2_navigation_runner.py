@@ -123,6 +123,8 @@ class Go2SemanticExplorationRunConfig:
     qwen_vl_url: str = 'http://localhost:12185/classify'
     qwen_vl_timeout: float = 60.0
     qwen_vl_max_candidates: int = 12
+    qwen_vl_crop_mode: str = 'masked'
+    semantic_ground_clearance: float = 0.02
     enable_target_cues: bool = True
     enable_qwen: bool = True
     qwen_model: str = 'Qwen/Qwen3-8B'
@@ -140,6 +142,10 @@ class Go2SemanticExplorationRunConfig:
             raise ValueError('semantic_classifier must be qwen-vl or clip')
         if self.qwen_vl_timeout <= 0 or self.qwen_vl_max_candidates < 1:
             raise ValueError('VL timeout and candidate count must be positive')
+        if self.qwen_vl_crop_mode not in ('context', 'masked'):
+            raise ValueError('invalid Qwen-VL crop mode')
+        if not math.isfinite(self.semantic_ground_clearance) or self.semantic_ground_clearance < 0:
+            raise ValueError('semantic ground clearance must be finite and nonnegative')
         if min(self.gpu, self.perception_gpu) < 0:
             raise ValueError('GPU indices cannot be negative')
         if self.max_steps <= 0 or self.mapping_warmup_steps < 0:
@@ -434,6 +440,9 @@ def run_go2_semantic_exploration(
                     qwen_vl_url=run.qwen_vl_url,
                     qwen_vl_timeout=run.qwen_vl_timeout,
                     qwen_vl_max_candidates=run.qwen_vl_max_candidates,
+                    qwen_vl_crop_mode=run.qwen_vl_crop_mode,
+                    semantic_ground_height=run.ground_height,
+                    semantic_ground_clearance=run.semantic_ground_clearance,
                 )
             )
             try:
