@@ -1,0 +1,382 @@
+{
+  "schema_version": 1,
+  "provenance": "hand-authored contract fixtures with scripted VLM scores; not model predictions or a navigation benchmark",
+  "cases": [
+    {
+      "id": "qwen-fridge",
+      "query": "fridge",
+      "classifier": "qwen-vl",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "refrigerator"
+        }
+      ]
+    },
+    {
+      "id": "clip-fridge",
+      "query": "fridge",
+      "classifier": "clip",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "refrigerator"
+        }
+      ]
+    },
+    {
+      "id": "clip-couch",
+      "query": "couch",
+      "classifier": "clip",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "sofa"
+        }
+      ]
+    },
+    {
+      "id": "clip-tv",
+      "query": "tv",
+      "classifier": "clip",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "television"
+        }
+      ]
+    },
+    {
+      "id": "clip-potted-plant",
+      "query": "potted plant",
+      "classifier": "clip",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "plant"
+        }
+      ]
+    },
+    {
+      "id": "qwen-couch",
+      "query": "couch",
+      "classifier": "qwen-vl",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "sofa"
+        }
+      ]
+    },
+    {
+      "id": "qwen-prefix",
+      "query": "Find the fridge!",
+      "classifier": "qwen-vl",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "refrigerator"
+        }
+      ]
+    },
+    {
+      "id": "clip-prefix",
+      "query": "go to the refrigerator",
+      "classifier": "clip",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "refrigerator"
+        }
+      ]
+    },
+    {
+      "id": "qwen-alternatives",
+      "query": "refrigerator | chair",
+      "classifier": "qwen-vl",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "chair"
+        }
+      ]
+    },
+    {
+      "id": "plain-refrigerator",
+      "query": "refrigerator",
+      "classifier": "qwen-vl",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "refrigerator"
+        }
+      ]
+    },
+    {
+      "id": "carry-object",
+      "query": "carry object",
+      "classifier": "clip",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "carry_object"
+        }
+      ]
+    },
+    {
+      "id": "legacy-part-label",
+      "query": "refrigerator",
+      "classifier": "clip",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "refrigerator door"
+        }
+      ]
+    },
+    {
+      "id": "white-fridge",
+      "query": "white fridge",
+      "classifier": "qwen-vl",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "refrigerator",
+          "goal_match_score": 0.95
+        }
+      ]
+    },
+    {
+      "id": "functional-fridge",
+      "query": "a large appliance used to keep food cold",
+      "classifier": "qwen-vl",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "refrigerator",
+          "goal_match_score": 0.94
+        }
+      ]
+    },
+    {
+      "id": "comfortable-chair",
+      "query": "comfortable chair",
+      "classifier": "qwen-vl",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "chair",
+          "goal_match_score": 0.9
+        }
+      ]
+    },
+    {
+      "id": "two-fridges",
+      "query": "white fridge",
+      "classifier": "qwen-vl",
+      "expected": "white",
+      "candidates": [
+        {
+          "id": "black",
+          "label": "refrigerator",
+          "goal_match_score": 0.05
+        },
+        {
+          "id": "white",
+          "label": "refrigerator",
+          "goal_match_score": 0.95
+        }
+      ]
+    },
+    {
+      "id": "wooden-chair",
+      "query": "wooden chair",
+      "classifier": "qwen-vl",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "chair",
+          "goal_match_score": 0.9
+        }
+      ]
+    },
+    {
+      "id": "red-sofa",
+      "query": "red sofa",
+      "classifier": "qwen-vl",
+      "expected": "target",
+      "candidates": [
+        {
+          "id": "target",
+          "label": "sofa",
+          "goal_match_score": 0.9
+        }
+      ]
+    },
+    {
+      "id": "monitor-is-not-tv",
+      "query": "television",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "distractor",
+          "label": "monitor"
+        }
+      ]
+    },
+    {
+      "id": "chair-part-substring",
+      "query": "chair",
+      "classifier": "clip",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "distractor",
+          "label": "chair cushion"
+        }
+      ]
+    },
+    {
+      "id": "cabinet-substring",
+      "query": "refrigerator cabinet",
+      "classifier": "clip",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "distractor",
+          "label": "cabinet"
+        }
+      ]
+    },
+    {
+      "id": "plant-substring",
+      "query": "plant",
+      "classifier": "clip",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "distractor",
+          "label": "plantation"
+        }
+      ]
+    },
+    {
+      "id": "white-query-black-fridge",
+      "query": "white refrigerator",
+      "classifier": "clip",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "distractor",
+          "label": "refrigerator"
+        }
+      ]
+    },
+    {
+      "id": "white-query-black-qwen",
+      "query": "white fridge",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "distractor",
+          "label": "refrigerator",
+          "goal_match_score": 0.1
+        }
+      ]
+    },
+    {
+      "id": "uncertain-color",
+      "query": "white fridge",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "distractor",
+          "label": "refrigerator",
+          "goal_match_score": 0.79
+        }
+      ]
+    },
+    {
+      "id": "old-service-no-score",
+      "query": "white fridge",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "distractor",
+          "label": "refrigerator"
+        }
+      ]
+    },
+    {
+      "id": "room-unverifiable",
+      "query": "the white appliance in the kitchen",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "distractor",
+          "label": "refrigerator",
+          "goal_match_score": null
+        }
+      ]
+    },
+    {
+      "id": "unknown-positive-score",
+      "query": "white fridge",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "distractor",
+          "label": "unknown",
+          "goal_match_score": 0.99
+        }
+      ]
+    },
+    {
+      "id": "low-node-confidence",
+      "query": "refrigerator",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "distractor",
+          "label": "refrigerator",
+          "confidence": 0.01
+        }
+      ]
+    },
+    {
+      "id": "unseen-goal",
+      "query": "microwave",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "distractor",
+          "label": "oven"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+E.....................E.......................................................................................................................................
+======================================================================
+ERROR: test_go2_navigation_support (unittest.loader._FailedTest.test_go2_navigation_support)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_go2_navigation_support
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Users/zixuanzheng/.codex/.chatgpt-projects/g-p-6a9d0b8678dc8191b52984fdd4c445ed/inter-nav-open-vocab/tests/test_go2_navigation_support.py", line 32, in <module>
+    _POLICY_MODULE = _load_module(
+        'go2_policy_for_test',
+        'grutopia_extension/controllers/go2_policy.py',
+    )
+  File "/Users/zixuanzheng/.codex/.chatgpt-projects/g-p-6a9d0b8678dc8191b52984fdd4c445ed/inter-nav-open-vocab/tests/test_go2_navigation_support.py", line 24, in _load_module
+    spec.loader.exec_module(module)
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "/Users/zixuanzheng/.codex/.chatgpt-projects/g-p-6a9d0b8678dc8191b52984fdd4c445ed/inter-nav-open-vocab/grutopia_extension/controllers/go2_policy.py", line 7, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+
+
+======================================================================
+ERROR: test_g1_third_person_is_close_and_elevated (test_interaction_navigation_camera.ThirdPersonCameraPlacementTest.test_g1_third_person_is_close_and_elevated)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/zixuanzheng/.codex/.chatgpt-projects/g-p-6a9d0b8678dc8191b52984fdd4c445ed/inter-nav-open-vocab/tests/test_interaction_navigation_camera.py", line 60, in test_g1_third_person_is_close_and_elevated
+    profile = load_point_navigation_profile(
+        str(
+    ...<5 lines>...
+        )
+    )
+  File "/Users/zixuanzheng/.codex/.chatgpt-projects/g-p-6a9d0b8678dc8191b52984fdd4c445ed/inter-nav-open-vocab/grutopia_extension/interactive_navigation/point_navigation_profiles.py", line 141, in load_point_navigation_profile
+    with profile_path.open('r', encoding='utf-8') as profile_file:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/pathlib/_local.py", line 537, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/zixuanzheng/.codex/.chatgpt-projects/g-p-6a9d0b8678dc8191b52984fdd4c445ed/inter-nav-open-vocab/grutopia/demo/profiles/g1_grscene_mv7_navigation.json'
+
+----------------------------------------------------------------------
+Ran 158 tests in 0.479s
+
+FAILED (errors=2)

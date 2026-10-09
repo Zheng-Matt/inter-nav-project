@@ -6,15 +6,16 @@ import math
 import os
 import time
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 from grutopia.core.config import Config, SimConfig
 from grutopia.core.gym_env import Env
 from grutopia.core.runtime import SimulatorRuntime
 from grutopia_extension import import_extensions
+from grutopia_extension.interactive_navigation.goal_matching import GoalMatchingConfig
 from grutopia_extension.configs.robots.go2 import (
     DEFAULT_GO2_POLICY_PATH,
     DEFAULT_GO2_USD_PATH,
@@ -96,6 +97,7 @@ class Go2NavigationRunConfig:
 class Go2SemanticExplorationRunConfig:
     target_query: str = 'refrigerator'
     gpu: int = 1
+    physics_gpu: Optional[int] = None
     perception_gpu: int = 5
     qwen_device: str = 'cuda:4'
     headless: bool = True
@@ -104,6 +106,7 @@ class Go2SemanticExplorationRunConfig:
     log_every: int = 100
     record_dir: str = ''
     record_every: int = 20
+    record_raw_rgb: bool = False
     video_fps: float = 12.0
     map_output: str = ''
     policy_path: str = DEFAULT_GO2_POLICY_PATH
@@ -114,9 +117,15 @@ class Go2SemanticExplorationRunConfig:
     # or 'hybrid' (fused). See SemanticDetectionMode.
     semantic_detection_mode: str = 'open_vocab'
     semantic_classifier: str = 'qwen-vl'
+    grounding_dino_url: str = 'http://localhost:12181/gdino'
+    mobile_sam_url: str = 'http://localhost:12183/mobile_sam'
+    goal_matching: GoalMatchingConfig = field(default_factory=GoalMatchingConfig)
+    target_embedding_threshold: float = 0.24
     qwen_vl_url: str = 'http://localhost:12185/classify'
     qwen_vl_timeout: float = 60.0
     qwen_vl_max_candidates: int = 12
+    qwen_vl_crop_mode: str = 'masked'
+    semantic_ground_clearance: float = 0.02
     enable_target_cues: bool = True
     enable_qwen: bool = True
     qwen_model: str = 'Qwen/Qwen3-8B'
@@ -128,12 +137,20 @@ class Go2SemanticExplorationRunConfig:
     def __post_init__(self):
         if not self.target_query.strip():
             raise ValueError('target_query cannot be empty')
+        if not math.isfinite(self.target_embedding_threshold) or not -1 <= self.target_embedding_threshold <= 1:
+            raise ValueError('target_embedding_threshold must be finite and in [-1, 1]')
         if self.semantic_classifier not in ('qwen-vl', 'clip'):
             raise ValueError('semantic_classifier must be qwen-vl or clip')
         if self.qwen_vl_timeout <= 0 or self.qwen_vl_max_candidates < 1:
             raise ValueError('VL timeout and candidate count must be positive')
+        if self.qwen_vl_crop_mode not in ('context', 'masked'):
+            raise ValueError('invalid Qwen-VL crop mode')
+        if not math.isfinite(self.semantic_ground_clearance) or self.semantic_ground_clearance < 0:
+            raise ValueError('semantic ground clearance must be finite and nonnegative')
         if min(self.gpu, self.perception_gpu) < 0:
             raise ValueError('GPU indices cannot be negative')
+        if self.physics_gpu is not None and self.physics_gpu < 0:
+            raise ValueError('physics GPU ordinal cannot be negative')
         if self.max_steps <= 0 or self.mapping_warmup_steps < 0:
             raise ValueError('max_steps must be positive and warmup cannot be negative')
         if self.log_every <= 0 or self.record_every <= 0 or self.video_fps <= 0:
@@ -416,13 +433,19 @@ def run_go2_semantic_exploration(
         if detection_mode.uses_open_vocabulary:
             perception = OpenVocabularyPerception(
                 OpenVocabularyPerceptionConfig(
+                    grounding_dino_url=run.grounding_dino_url,
+                    mobile_sam_url=run.mobile_sam_url,
                     clip_device=f'cuda:{run.perception_gpu}',
                     query_interval=0.25,
                     request_timeout=8.0,
                     semantic_classifier=run.semantic_classifier,
+                    goal_matching=run.goal_matching,
                     qwen_vl_url=run.qwen_vl_url,
                     qwen_vl_timeout=run.qwen_vl_timeout,
                     qwen_vl_max_candidates=run.qwen_vl_max_candidates,
+                    qwen_vl_crop_mode=run.qwen_vl_crop_mode,
+                    semantic_ground_height=run.ground_height,
+                    semantic_ground_clearance=run.semantic_ground_clearance,
                 )
             )
             try:
@@ -482,7 +505,7 @@ def run_go2_semantic_exploration(
             ),
             headless=run.headless,
             active_gpu=run.gpu,
-            physics_gpu=run.gpu,
+            physics_gpu=run.gpu if run.physics_gpu is None else run.physics_gpu,
         )
         configure_scene_mdl_paths(profile.scene_asset_path)
         import_extensions(('controllers', 'objects', 'robots', 'sensors', 'tasks'))
@@ -546,6 +569,8 @@ def run_go2_semantic_exploration(
         component = SemanticExplorationComponent(
             SemanticExplorationConfig(
                 target_query=run.target_query,
+                goal_matching=run.goal_matching,
+                target_embedding_threshold=run.target_embedding_threshold,
                 mapping=profile.mapping,
                 voronoi=SemanticVoronoiConfig(
                     verify_incremental=run.verify_voronoi_incremental,
@@ -597,6 +622,7 @@ def run_go2_semantic_exploration(
                 third_person_offset=profile.third_person_offset,
                 third_person_pitch_degrees=profile.third_person_pitch_degrees,
                 third_person_fov_degrees=profile.third_person_fov_degrees,
+                record_raw_rgb=run.record_raw_rgb,
             )
             recorder.prime(robot_observation)
         sensor_rig.prime(robot_observation)

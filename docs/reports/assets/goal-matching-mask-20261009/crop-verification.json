@@ -1,0 +1,74 @@
+{
+  "opencv_version": "4.11.0",
+  "production_crop_matches_saved_fixture": [
+    {
+      "crop": "fridge_000024.png",
+      "exact_equal": true,
+      "mask_pixels": 33515
+    },
+    {
+      "crop": "fridge_000192.png",
+      "exact_equal": true,
+      "mask_pixels": 37540
+    },
+    {
+      "crop": "floor_000192.png",
+      "exact_equal": true,
+      "mask_pixels": 109915
+    },
+    {
+      "crop": "fridge_000096.png",
+      "exact_equal": true,
+      "mask_pixels": 31732
+    },
+    {
+      "crop": "fridge_000240.png",
+      "exact_equal": true,
+      "mask_pixels": 43006
+    },
+    {
+      "crop": "floor_000240.png",
+      "exact_equal": true,
+      "mask_pixels": 108714
+    }
+  ],
+  "local_opencv_version": "5.0.0",
+  "local_cross_version_comparison": [
+    {
+      "crop": "fridge_000024.png",
+      "changed_channels": 0,
+      "total_channels": 160740,
+      "max_channel_difference": 0
+    },
+    {
+      "crop": "fridge_000192.png",
+      "changed_channels": 0,
+      "total_channels": 187044,
+      "max_channel_difference": 0
+    },
+    {
+      "crop": "floor_000192.png",
+      "changed_channels": 0,
+      "total_channels": 156672,
+      "max_channel_difference": 0
+    },
+    {
+      "crop": "fridge_000096.png",
+      "changed_channels": 0,
+      "total_channels": 166320,
+      "max_channel_difference": 0
+    },
+    {
+      "crop": "fridge_000240.png",
+      "changed_channels": 0,
+      "total_channels": 228888,
+      "max_channel_difference": 0
+    },
+    {
+      "crop": "floor_000240.png",
+      "changed_channels": 5,
+      "total_channels": 157824,
+      "max_channel_difference": 1
+    }
+  ]
+}

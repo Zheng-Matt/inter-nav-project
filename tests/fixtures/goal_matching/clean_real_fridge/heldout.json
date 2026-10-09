@@ -1,0 +1,305 @@
+{
+  "provenance": {
+    "kind": "human annotated held-out frames",
+    "runtime_commit": "0eeb29b006bee4c6eefb823a060892a164a6e582",
+    "annotation": "Frames 96 and 240 were not used for prompt adjustment. Same single real gray-brown refrigerator instance; not an unseen-object generalization test.",
+    "sources": [
+      {
+        "step": 96,
+        "source_sha256": "d8e65cffb5353bb36fc4c294ce9888ddf5bb0fc8518e27d527a417a1a8bded38",
+        "bbox_xyxy": [
+          294.5740966796875,
+          0.0,
+          445.93426513671875,
+          243.16941833496094
+        ],
+        "crop": "fridge_000096.png"
+      },
+      {
+        "step": 240,
+        "source_sha256": "6ec7e010b263892c7fdc63853f5f3018be13167f5ca9aaadcb3d86025b5e651f",
+        "bbox_xyxy": [
+          405.11517333984375,
+          0.0,
+          607.3229370117188,
+          250.6773223876953
+        ],
+        "crop": "fridge_000240.png"
+      },
+      {
+        "step": 240,
+        "bbox_xyxy": [
+          0.01857757568359375,
+          162.0093231201172,
+          640.0,
+          359.919921875
+        ],
+        "crop": "floor_000240.png",
+        "annotation": "Main outlined region is floor. Partial fridge is background, not candidate."
+      }
+    ],
+    "dataset_role": "heldout"
+  },
+  "cases": [
+    {
+      "id": "heldout-96-0",
+      "query": "refrigerator",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000096.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-96-1",
+      "query": "the fridge",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000096.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-96-2",
+      "query": "an appliance that keeps food cold",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000096.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-96-3",
+      "query": "a gray-brown refrigerator",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000096.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-96-4",
+      "query": "a red refrigerator",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000096.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-96-5",
+      "query": "a bright blue refrigerator",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000096.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-96-6",
+      "query": "a white refrigerator",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000096.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-96-7",
+      "query": "a chair for sitting",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000096.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-96-8",
+      "query": "the refrigerator beside a bed",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000096.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-240-0",
+      "query": "refrigerator",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000240.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-240-1",
+      "query": "the fridge",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000240.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-240-2",
+      "query": "an appliance that keeps food cold",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000240.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-240-3",
+      "query": "a gray-brown refrigerator",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000240.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-240-4",
+      "query": "a red refrigerator",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000240.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-240-5",
+      "query": "a bright blue refrigerator",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000240.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-240-6",
+      "query": "a white refrigerator",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000240.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-240-7",
+      "query": "a chair for sitting",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000240.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-240-8",
+      "query": "the refrigerator beside a bed",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "unknown",
+          "crop": "fridge_000240.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-floor-18",
+      "query": "fridge",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "floor",
+          "label": "unknown",
+          "crop": "floor_000240.png"
+        }
+      ]
+    },
+    {
+      "id": "heldout-floor-19",
+      "query": "an appliance that keeps food cold",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "floor",
+          "label": "unknown",
+          "crop": "floor_000240.png"
+        }
+      ]
+    }
+  ]
+}

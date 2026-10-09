@@ -59,7 +59,8 @@ class QwenVLPerceptionTest(unittest.TestCase):
         self.assertEqual(p.last_debug_frame['classified'][0]['classifier_model'], 'Qwen/Qwen3-VL-8B-Instruct')
         crop = classifier.calls[0][0]
         self.assertGreater(crop.shape[0], 60)
-        self.assertEqual(int(crop[0, 0, 0]), 7)  # real background retained
+        self.assertEqual(int(crop[0, 0, 0]), 127)  # background hidden by the existing SAM mask
+        self.assertEqual(int(crop[crop.shape[0] // 2, crop.shape[1] // 2, 0]), 7)
         self.assertTrue(np.any(np.all(crop == (255, 0, 0), axis=2)))
 
     def test_unknown_is_recorded_but_not_mapping_evidence(self):

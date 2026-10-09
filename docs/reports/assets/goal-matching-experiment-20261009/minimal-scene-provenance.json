@@ -1,0 +1,34 @@
+{
+  "source": "/data20t/embodied/share/inter-nav/assets/scenes/GRScenes-100/home_scenes/scenes/MV7J6NIKTKJZ2AABAAAAADA8_usd/start_result_navigation_preview.usda",
+  "source_sha256": "b91e7ca95ab5000ef6f1a488ee64cbe33dc969b7b6c16944c536801bff888436",
+  "referenced_prim": "/Root/Meshes/Animation/refrigerator/model_8958330cdaa9b7dcda067c99f5916ca3_0",
+  "output": "grutopia/results/goal_matching_experiment_20261009_152404/minimal-real-fridge.usda",
+  "output_sha256": "ef2397345a4ca0f9beb1e4c6d0157418507c2bcd2f37c914ea9b5f52c3f4d501",
+  "transform": [
+    [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      1.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      1.0,
+      0.0
+    ],
+    [
+      1076.9474730245518,
+      -175.62987,
+      92.59615000000001,
+      1.0
+    ]
+  ],
+  "limitations": "Single real scene asset, original geometry/material reference, neutral dome light, existing flat floor. Not full-house navigation."
+}

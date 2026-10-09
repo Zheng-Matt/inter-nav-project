@@ -19,6 +19,7 @@ from grutopia_extension.interactive_navigation.semantic_exploration import (
     ExplorationDecision,
 )
 from grutopia_extension.interactive_navigation.semantic_voronoi import SemanticVoronoiConfig
+from grutopia_extension.interactive_navigation.goal_matching import GoalMatchingConfig, GoalQuery, normalized_embedding
 
 
 class SemanticExplorationStatus(str, Enum):
@@ -45,6 +46,7 @@ class SemanticExplorationConfig:
     target_semantic_classifier: str = 'clip'
     target_min_observations: int = 2
     target_embedding_threshold: float = 0.24
+    goal_matching: GoalMatchingConfig = field(default_factory=GoalMatchingConfig)
     require_lexical_confirmation: bool = True
     target_confirmation_min_label_observations: int = 8
     target_confirmation_min_label_fraction: float = 0.60
@@ -65,6 +67,9 @@ class SemanticExplorationConfig:
             raise ValueError('target_semantic_classifier must be clip or qwen-vl')
         if not self.target_query.strip():
             raise ValueError('target_query cannot be empty')
+        GoalQuery.parse(self.target_query)
+        if not np.isfinite(self.target_embedding_threshold) or not -1 <= self.target_embedding_threshold <= 1:
+            raise ValueError('target_embedding_threshold must be finite and in [-1, 1]')
         object.__setattr__(
             self,
             'semantic_detection_mode',
@@ -143,6 +148,12 @@ class SemanticExplorationComponent:
     def __init__(self, config: SemanticExplorationConfig, perception=None, scorer=None):
         self.config = config
         self.perception = perception
+        self._goal_query = GoalQuery.parse(config.target_query)
+        self._robust_goal = config.goal_matching.mode == 'robust'
+        self._descriptive_goal = self._robust_goal and self._goal_query.descriptive
+        self._embedding_similarity = None
+        self._embedding_margin = None
+        self._embedding_error = None
         self.mapping = MapNavigationRuntime(
             mapping_config=config.mapping,
             safe_base_height=config.safe_base_height,
@@ -201,16 +212,28 @@ class SemanticExplorationComponent:
             return 'initialize_exploration'
         return f'explore_{self.last_decision.mode.value}'
 
+    def _label_matches_goal(self, label: str) -> bool:
+        if self._robust_goal:
+            return self._goal_query.matches_label(
+                label, detector_label=self.config.target_semantic_classifier != 'qwen-vl',
+            )
+        query = _normalize_label(self.config.target_query)
+        if self.config.target_semantic_classifier == 'qwen-vl':
+            return canonical_semantic_label(label) == canonical_semantic_label(query)
+        return query in _normalize_label(label) or _normalize_label(label) in query
+
     def _node_label_evidence(self, node: SceneGraphNode) -> Tuple[int, int, int]:
+        if self._descriptive_goal:
+            matching, total = self.mapping.map.scene_graph.goal_match_counts(
+                node.node_id, self._goal_query.text, self.config.goal_matching.description_threshold,
+            )
+            return matching, total, 0
         counts = self.mapping.map.scene_graph.label_counts(node.node_id)
         if not counts:
             counts = {node.label: node.observations}
-        query = _normalize_label(self.config.target_query)
         matching_counts = [
             count for label, count in counts.items()
-            if ((canonical_semantic_label(label) == canonical_semantic_label(query))
-                if self.config.target_semantic_classifier == 'qwen-vl'
-                else (query in _normalize_label(label) or _normalize_label(label) in query))
+            if self._label_matches_goal(label)
         ]
         return sum(matching_counts), sum(counts.values()), max(matching_counts, default=0)
 
@@ -224,7 +247,8 @@ class SemanticExplorationComponent:
     def target_confirmed(self) -> bool:
         if self.target_node is None:
             return False
-        if not self.config.require_lexical_confirmation:
+        descriptive = self._descriptive_goal
+        if not self.config.require_lexical_confirmation and not descriptive:
             return True
         matching, total, repeated_label = self._node_label_evidence(self.target_node)
         return (
@@ -236,7 +260,7 @@ class SemanticExplorationComponent:
                 # A stable refrigerator can also be called "door" in most
                 # frames. Repeated identical target labels are stronger
                 # evidence than their fraction of all node observations.
-                or repeated_label >= self.config.target_confirmation_min_label_observations
+                or (not descriptive and repeated_label >= self.config.target_confirmation_min_label_observations)
             )
         )
 
@@ -278,7 +302,8 @@ class SemanticExplorationComponent:
                     self._target_lexical = True
                     self.target_navigation_position = None
         if (
-            self.config.require_lexical_confirmation
+            (self.config.require_lexical_confirmation
+             or self._descriptive_goal)
             and self.target_node is not None
             and not self.target_confirmed
             and self.target_navigation_position is not None
@@ -291,6 +316,7 @@ class SemanticExplorationComponent:
             self.target_navigation_position = None
             self.current_goal = None
             self.current_frontier_id = None
+            self._target_lexical = False
             self._last_selection_step = step - self.config.frontier_selection_interval
         if self.target_node is not None:
             if self.target_cue is not None:
@@ -447,6 +473,9 @@ class SemanticExplorationComponent:
 
     def statistics(self) -> dict:
         stats = dict(self.mapping.statistics())
+        match_method = None
+        if self.target_node is not None:
+            match_method = ('description' if self._descriptive_goal else 'lexical') if self._target_lexical else 'embedding'
         stats.update(
             {
                 'exploration_state': self.state,
@@ -456,19 +485,19 @@ class SemanticExplorationComponent:
                 'target_label_support': self._target_label_support()[0],
                 'rejected_provisional_targets': len(self._rejected_embedding_targets),
                 'target_node': None if self.target_node is None else self.target_node.node_id,
-                'target_match': (
-                    None
-                    if self.target_node is None
-                    else ('lexical' if self._target_lexical else 'embedding')
-                ),
-                'target_match_method': (
-                    None
-                    if self.target_node is None
-                    else ('lexical' if self._target_lexical else 'embedding')
-                ),
+                'target_match': match_method,
+                'target_match_method': match_method,
                 'target_sources': (
                     [] if self.target_node is None else list(self.target_node.sources)
                 ),
+                'goal_matching_mode': self.config.goal_matching.mode,
+                'goal_query_descriptive': self._goal_query.descriptive,
+                'goal_verification_support': (
+                    self._target_label_support()[0] if self._goal_query.descriptive else 0
+                ),
+                'goal_embedding_similarity': self._embedding_similarity,
+                'goal_embedding_margin': self._embedding_margin,
+                'goal_embedding_error': self._embedding_error,
                 'active_frontier': self.current_frontier_id,
                 'active_goal': None if self.current_goal is None else list(self.current_goal),
                 'exploration_decisions': len(self.decision_history),
@@ -504,21 +533,22 @@ class SemanticExplorationComponent:
             node
             for node in self.mapping.map.scene_graph.object_nodes()
             if node.observations >= self.config.target_min_observations
+            and (self.config.goal_matching.mode == 'legacy'
+                 or (np.isfinite(node.confidence) and node.confidence >= self.config.goal_matching.min_node_confidence))
         ]
 
     def _lexical_target_node(self, nodes=None) -> Optional[SceneGraphNode]:
         if nodes is None:
             nodes = self._candidate_target_nodes()
-        normalized_target = _normalize_label(self.config.target_query)
         lexical = []
         for node in nodes:
-            representative_matches = (
-                canonical_semantic_label(node.label) == canonical_semantic_label(normalized_target)
-                if self.config.target_semantic_classifier == 'qwen-vl'
-                else (normalized_target in _normalize_label(node.label)
-                      or _normalize_label(node.label) in normalized_target)
-            )
-            matching, _, repeated_label = self._node_label_evidence(node)
+            representative_matches = self._label_matches_goal(node.label)
+            matching, total, repeated_label = self._node_label_evidence(node)
+            if self._descriptive_goal:
+                if (matching >= self.config.target_min_observations and total > 0
+                        and matching / total >= self.config.target_confirmation_min_label_fraction):
+                    lexical.append(node)
+                continue
             if representative_matches or (
                 matching >= self.config.target_confirmation_min_label_observations
                 and repeated_label >= self.config.target_confirmation_min_label_observations
@@ -555,13 +585,23 @@ class SemanticExplorationComponent:
             if node.node_id in self._rejected_embedding_targets or node.embedding is None:
                 continue
             embedding = np.asarray(node.embedding, dtype=np.float32)
+            if self.config.goal_matching.mode == 'robust':
+                embedding = normalized_embedding(node.embedding)
+                if embedding is None:
+                    continue
             if embedding.shape != target_embedding.shape:
                 continue
             scored.append((float(np.dot(target_embedding, embedding)), node))
         if not scored:
             return None
-        similarity, node = max(scored, key=lambda item: item[0])
+        scored.sort(key=lambda item: item[0], reverse=True)
+        similarity, node = scored[0]
+        margin = similarity - scored[1][0] if len(scored) > 1 else None
+        self._embedding_similarity, self._embedding_margin = similarity, margin
         if similarity < self.config.target_embedding_threshold:
+            return None
+        if (self.config.goal_matching.mode == 'robust' and margin is not None
+                and margin < self.config.goal_matching.embedding_margin):
             return None
         self._target_lexical = False
         return node
@@ -577,7 +617,12 @@ class SemanticExplorationComponent:
                 self.perception.embed_text(self.config.target_query),
                 dtype=np.float32,
             )
-        except Exception:
+            if self.config.goal_matching.mode == 'robust':
+                self._target_embedding = normalized_embedding(self._target_embedding)
+                if self._target_embedding is None:
+                    self._embedding_error = 'invalid_embedding'
+        except Exception as error:
+            self._embedding_error = type(error).__name__
             self._target_embedding = None
         return self._target_embedding
 

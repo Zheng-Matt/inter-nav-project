@@ -118,7 +118,9 @@ def build_run_summary(
             0 if component is None else component._target_label_support()[0]
         ),
         'target_match_method': (
-            None if node is None else ('lexical' if component._target_lexical else 'embedding')
+            None if node is None else stats.get(
+                'target_match_method', 'lexical' if component._target_lexical else 'embedding'
+            )
         ),
         'rejected_provisional_targets': (
             0 if component is None else len(component._rejected_embedding_targets)

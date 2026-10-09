@@ -1133,6 +1133,7 @@ class MapNavigationRuntime:
                     node.node_id: self.map.scene_graph.label_counts(node.node_id)
                     for node in graph.nodes if node.kind == 'object'
                 },
+                'goal_match_evidence': self.map.scene_graph.goal_match_evidence(),
             }
         if self.semantic_voronoi is not None:
             payload['semantic_voronoi'] = self.semantic_voronoi.to_dict()
@@ -1261,6 +1262,14 @@ def _deduplicate_semantic_detections(detections) -> tuple:
         appearance = detection if detection.embedding is not None else previous
         color_source = detection if detection.color is not None else previous
         label_source = detection if detection.confidence > previous.confidence else previous
+        goal_source = detection if detection.goal_query else previous
+        goal_score = goal_source.goal_match_score
+        if previous.goal_query and detection.goal_query:
+            if previous.goal_query != detection.goal_query:
+                goal_score = None
+            elif previous.goal_match_score is not None and detection.goal_match_score is not None:
+                # Conflicting same-frame proposals cannot increase confidence.
+                goal_score = min(previous.goal_match_score, detection.goal_match_score)
         merged[match_index] = SemanticDetection(
             label=label_source.label,
             position=geometry.position,
@@ -1274,6 +1283,8 @@ def _deduplicate_semantic_detections(detections) -> tuple:
                 *(previous.label_evidence or (previous.label,)),
                 *(detection.label_evidence or (detection.label,)),
             ))),
+            goal_query=goal_source.goal_query,
+            goal_match_score=goal_score,
         )
     return tuple(merged)
 

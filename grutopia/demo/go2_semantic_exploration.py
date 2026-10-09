@@ -6,6 +6,7 @@ import sys
 from datetime import datetime
 
 from grutopia.core.util import has_display
+from grutopia_extension.interactive_navigation.goal_matching import GoalMatchingConfig
 from grutopia.demo.go2_point_navigation import build_objects
 from grutopia_extension.configs.objects import (
     FixedCubeCfg,
@@ -43,6 +44,12 @@ GRSCENE_FLOOR_TOP = 0.15
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--target', default='refrigerator')
+    parser.add_argument('--goal-matching', choices=('robust', 'legacy'), default='robust')
+    parser.add_argument('--description-verification', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--goal-match-confidence', type=float, default=0.80)
+    parser.add_argument('--goal-embedding-margin', type=float, default=0.03)
+    parser.add_argument('--goal-node-confidence', type=float, default=0.10)
+    parser.add_argument('--goal-embedding-threshold', type=float, default=0.24)
     parser.add_argument(
         '--scene',
         choices=('grscene', 'programmatic'),
@@ -54,6 +61,8 @@ def parse_args():
     parser.add_argument('--environment-length', type=float, default=16.0)
     parser.add_argument('--environment-width', type=float, default=10.0)
     parser.add_argument('--gpu', type=int, default=1)
+    parser.add_argument('--physics-gpu', type=int,
+                        help='Physics CUDA ordinal within visible devices; defaults to --gpu.')
     parser.add_argument('--perception-gpu', type=int, default=5)
     parser.add_argument('--qwen-device', default='cuda:4')
     parser.add_argument('--max-steps', type=int, default=12000)
@@ -80,9 +89,15 @@ def parse_args():
     )
     parser.add_argument('--semantic-classifier', choices=('qwen-vl', 'clip'), default='qwen-vl',
                         help='Qwen-VL classifies marked RGB crops; CLIP retains the legacy path.')
+    parser.add_argument('--grounding-dino-url', default='http://localhost:12181/gdino')
+    parser.add_argument('--mobile-sam-url', default='http://localhost:12183/mobile_sam')
     parser.add_argument('--qwen-vl-url', default='http://localhost:12185/classify')
     parser.add_argument('--qwen-vl-timeout', type=float, default=60.0)
     parser.add_argument('--qwen-vl-max-candidates', type=int, default=12)
+    parser.add_argument('--qwen-vl-crop-mode', choices=('masked', 'context'), default='masked',
+                        help='Robust mode hides pixels outside SAM; context restores the original view.')
+    parser.add_argument('--semantic-ground-clearance', type=float, default=0.02,
+                        help='Reject masks within this height above the known floor; 0 disables the filter.')
     parser.add_argument('--target-cues', action=argparse.BooleanOptionalAction, default=True,
                         help='Use DINO target proposals to approach and observe; never count them as class votes.')
     parser.add_argument(
@@ -106,6 +121,8 @@ def parse_args():
         help='output directory; defaults to a new timestamped directory',
     )
     parser.add_argument('--record-every', type=int, default=20)
+    parser.add_argument('--record-raw-rgb', action='store_true',
+                        help='Save unannotated sensor RGB at mapping frames under <record-dir>/raw_rgb.')
     parser.add_argument('--video-fps', type=float, default=12.0)
     parser.add_argument('--rendering-interval', type=int, default=4)
     parser.add_argument(
@@ -203,8 +220,16 @@ def main():
         profile,
         Go2SemanticExplorationRunConfig(
             target_query=args.target,
+            goal_matching=GoalMatchingConfig(
+                mode=args.goal_matching, verify_descriptions=args.description_verification,
+                description_threshold=args.goal_match_confidence,
+                embedding_margin=args.goal_embedding_margin,
+                min_node_confidence=args.goal_node_confidence,
+            ),
+            target_embedding_threshold=args.goal_embedding_threshold,
             ground_height=GRSCENE_FLOOR_TOP if args.scene == 'grscene' else 0.0,
             gpu=args.gpu,
+            physics_gpu=args.physics_gpu,
             perception_gpu=args.perception_gpu,
             qwen_device=args.qwen_device,
             headless=args.headless,
@@ -212,6 +237,7 @@ def main():
             mapping_warmup_steps=args.mapping_warmup_steps,
             record_dir=record_dir,
             record_every=args.record_every,
+            record_raw_rgb=args.record_raw_rgb,
             video_fps=args.video_fps,
             map_output=map_output,
             policy_path=args.policy_path,
@@ -219,9 +245,13 @@ def main():
             generate_fallback_asset=args.generate_fallback_asset,
             semantic_detection_mode=args.detection_mode,
             semantic_classifier=args.semantic_classifier,
+            grounding_dino_url=args.grounding_dino_url,
+            mobile_sam_url=args.mobile_sam_url,
             qwen_vl_url=args.qwen_vl_url,
             qwen_vl_timeout=args.qwen_vl_timeout,
             qwen_vl_max_candidates=args.qwen_vl_max_candidates,
+            qwen_vl_crop_mode=args.qwen_vl_crop_mode,
+            semantic_ground_clearance=args.semantic_ground_clearance,
             enable_target_cues=args.target_cues,
             enable_qwen=args.qwen,
             qwen_model=args.qwen_model,
