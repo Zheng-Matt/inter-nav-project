@@ -105,6 +105,7 @@ class Go2SemanticExplorationRunConfig:
     log_every: int = 100
     record_dir: str = ''
     record_every: int = 20
+    record_raw_rgb: bool = False
     video_fps: float = 12.0
     map_output: str = ''
     policy_path: str = DEFAULT_GO2_POLICY_PATH
@@ -115,6 +116,8 @@ class Go2SemanticExplorationRunConfig:
     # or 'hybrid' (fused). See SemanticDetectionMode.
     semantic_detection_mode: str = 'open_vocab'
     semantic_classifier: str = 'qwen-vl'
+    grounding_dino_url: str = 'http://localhost:12181/gdino'
+    mobile_sam_url: str = 'http://localhost:12183/mobile_sam'
     goal_matching: GoalMatchingConfig = field(default_factory=GoalMatchingConfig)
     target_embedding_threshold: float = 0.24
     qwen_vl_url: str = 'http://localhost:12185/classify'
@@ -421,6 +424,8 @@ def run_go2_semantic_exploration(
         if detection_mode.uses_open_vocabulary:
             perception = OpenVocabularyPerception(
                 OpenVocabularyPerceptionConfig(
+                    grounding_dino_url=run.grounding_dino_url,
+                    mobile_sam_url=run.mobile_sam_url,
                     clip_device=f'cuda:{run.perception_gpu}',
                     query_interval=0.25,
                     request_timeout=8.0,
@@ -605,6 +610,7 @@ def run_go2_semantic_exploration(
                 third_person_offset=profile.third_person_offset,
                 third_person_pitch_degrees=profile.third_person_pitch_degrees,
                 third_person_fov_degrees=profile.third_person_fov_degrees,
+                record_raw_rgb=run.record_raw_rgb,
             )
             recorder.prime(robot_observation)
         sensor_rig.prime(robot_observation)

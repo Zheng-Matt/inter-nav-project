@@ -87,6 +87,8 @@ def parse_args():
     )
     parser.add_argument('--semantic-classifier', choices=('qwen-vl', 'clip'), default='qwen-vl',
                         help='Qwen-VL classifies marked RGB crops; CLIP retains the legacy path.')
+    parser.add_argument('--grounding-dino-url', default='http://localhost:12181/gdino')
+    parser.add_argument('--mobile-sam-url', default='http://localhost:12183/mobile_sam')
     parser.add_argument('--qwen-vl-url', default='http://localhost:12185/classify')
     parser.add_argument('--qwen-vl-timeout', type=float, default=60.0)
     parser.add_argument('--qwen-vl-max-candidates', type=int, default=12)
@@ -113,6 +115,8 @@ def parse_args():
         help='output directory; defaults to a new timestamped directory',
     )
     parser.add_argument('--record-every', type=int, default=20)
+    parser.add_argument('--record-raw-rgb', action='store_true',
+                        help='Save unannotated sensor RGB at mapping frames under <record-dir>/raw_rgb.')
     parser.add_argument('--video-fps', type=float, default=12.0)
     parser.add_argument('--rendering-interval', type=int, default=4)
     parser.add_argument(
@@ -226,6 +230,7 @@ def main():
             mapping_warmup_steps=args.mapping_warmup_steps,
             record_dir=record_dir,
             record_every=args.record_every,
+            record_raw_rgb=args.record_raw_rgb,
             video_fps=args.video_fps,
             map_output=map_output,
             policy_path=args.policy_path,
@@ -233,6 +238,8 @@ def main():
             generate_fallback_asset=args.generate_fallback_asset,
             semantic_detection_mode=args.detection_mode,
             semantic_classifier=args.semantic_classifier,
+            grounding_dino_url=args.grounding_dino_url,
+            mobile_sam_url=args.mobile_sam_url,
             qwen_vl_url=args.qwen_vl_url,
             qwen_vl_timeout=args.qwen_vl_timeout,
             qwen_vl_max_candidates=args.qwen_vl_max_candidates,
