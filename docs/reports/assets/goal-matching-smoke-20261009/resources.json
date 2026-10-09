@@ -1,0 +1,158 @@
+{
+  "qwen_service": {
+    "command": [
+      "/data20t/embodied/wzj/internnav_data/envs/qwen35_caption/bin/python",
+      "-u",
+      "grutopia/demo/serve_semantic_perception.py",
+      "qwen-vl",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "12186",
+      "--device",
+      "cuda:0",
+      "--qwen-vl-model",
+      "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "commit": "7186a7dff66a5084feb2de5d3ca7b1623aa6c016",
+    "started_utc": "2026-10-09T06:24:26.904646+00:00",
+    "timeout_seconds": 600.0,
+    "gpu_initial": {
+      "gpu_uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+      "memory_mib": 240,
+      "utilization_percent": 0
+    },
+    "stop_reason": "requested_cleanup",
+    "exit_code": -15,
+    "wall_seconds": 183.66,
+    "gpu_peak_total_mib": 17685,
+    "gpu_final": {
+      "gpu_uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+      "memory_mib": 240,
+      "utilization_percent": 0
+    },
+    "finished_utc": "2026-10-09T06:27:30.586792+00:00"
+  },
+  "comparison": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/isaaclab/bin/python",
+      "grutopia/demo/evaluate_goal_matching.py",
+      "--dataset",
+      "grutopia/results/goal_matching_smoke_20261009_1425/smoke_dataset.json",
+      "--baseline-root",
+      "grutopia/results/goal_matching_smoke_20261009_1425/baseline-main",
+      "--record-dir",
+      "grutopia/results/goal_matching_smoke_20261009_1425/live-comparison",
+      "--live-qwen-url",
+      "http://127.0.0.1:12186/classify",
+      "--matching-repeats",
+      "20"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "commit": "7186a7dff66a5084feb2de5d3ca7b1623aa6c016",
+    "started_utc": "2026-10-09T06:27:19.084549+00:00",
+    "timeout_seconds": 180.0,
+    "gpu_initial": {
+      "gpu_uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+      "memory_mib": 17491,
+      "utilization_percent": 0
+    },
+    "exit_code": 0,
+    "wall_seconds": 6.164,
+    "gpu_peak_total_mib": 17659,
+    "gpu_final": {
+      "gpu_uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+      "memory_mib": 17659,
+      "utilization_percent": 0
+    },
+    "finished_utc": "2026-10-09T06:27:25.270124+00:00"
+  },
+  "replay": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/isaaclab/bin/python",
+      "/data/zzx/inter-nav-replay-smoke.py"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "commit": "7186a7dff66a5084feb2de5d3ca7b1623aa6c016",
+    "started_utc": "2026-10-09T06:27:25.316208+00:00",
+    "timeout_seconds": 180.0,
+    "gpu_initial": {
+      "gpu_uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+      "memory_mib": 17659,
+      "utilization_percent": 0
+    },
+    "exit_code": 2,
+    "wall_seconds": 4.117,
+    "gpu_peak_total_mib": 17661,
+    "gpu_final": {
+      "gpu_uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+      "memory_mib": 17685,
+      "utilization_percent": 87
+    },
+    "finished_utc": "2026-10-09T06:27:29.451819+00:00"
+  },
+  "navigation": {
+    "command": [
+      "/data20t/embodied/share/inter-nav/envs/isaaclab/bin/python",
+      "-u",
+      "grutopia/demo/go2_semantic_exploration.py",
+      "--scene",
+      "programmatic",
+      "--start",
+      "10",
+      "-2.6",
+      "0.40",
+      "--goal",
+      "12",
+      "-2.6",
+      "0.40",
+      "--gpu",
+      "0",
+      "--perception-gpu",
+      "0",
+      "--qwen-device",
+      "cuda:0",
+      "--headless",
+      "--detection-mode",
+      "isaac",
+      "--no-qwen",
+      "--target",
+      "fridge",
+      "--goal-matching",
+      "robust",
+      "--max-steps",
+      "480",
+      "--mapping-warmup-steps",
+      "80",
+      "--record-every",
+      "80",
+      "--rendering-interval",
+      "4",
+      "--record-dir",
+      "grutopia/results/goal_matching_smoke_20261009_1425/navigation"
+    ],
+    "cwd": "/data/zzx/inter-nav-goal-matching-smoke",
+    "CUDA_VISIBLE_DEVICES": "0",
+    "commit": "7186a7dff66a5084feb2de5d3ca7b1623aa6c016",
+    "started_utc": "2026-10-09T06:28:48.000690+00:00",
+    "timeout_seconds": 180.0,
+    "gpu_initial": {
+      "gpu_uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+      "memory_mib": 240,
+      "utilization_percent": 0
+    },
+    "exit_code": 0,
+    "wall_seconds": 48.391,
+    "gpu_peak_total_mib": 4665,
+    "gpu_final": {
+      "gpu_uuid": "GPU-2e5eb292-9221-449c-d18f-4b91ad613eb9",
+      "memory_mib": 240,
+      "utilization_percent": 0
+    },
+    "finished_utc": "2026-10-09T06:29:36.411214+00:00"
+  }
+}

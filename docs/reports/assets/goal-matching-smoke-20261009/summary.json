@@ -1,0 +1,53 @@
+{
+  "tested_commit": "7186a7dff66a5084feb2de5d3ca7b1623aa6c016",
+  "branch": "improve-open-vocabulary-goal-matching",
+  "remote_checkout": "/data/zzx/inter-nav-goal-matching-smoke",
+  "gpu_index": 0,
+  "cuda_visible_devices": "0",
+  "overall": "PARTIAL: three required query cases passed; attribute negative, production temporal confirmation and navigation arrival failed.",
+  "model_requests": 18,
+  "positive_query_cases": [
+    "refrigerator",
+    "fridge",
+    "a large appliance used to keep food cold"
+  ],
+  "attribute_negative": {
+    "query": "a red fridge",
+    "expected": null,
+    "predicted": "refrigerator",
+    "score": 0.9,
+    "PASS": false
+  },
+  "production_replay": {
+    "frames": 8,
+    "positive_votes": 7,
+    "required_votes": 8,
+    "PASS": false,
+    "limitation": "Some frames still contain unknown/score annotation text; not a clean vision benchmark."
+  },
+  "navigation": {
+    "mode": "isaac",
+    "target": "fridge",
+    "step": 479,
+    "target_confirmed": true,
+    "plans": 2,
+    "planning_failures": 0,
+    "arrival_distance_m": 0.8055,
+    "arrival_threshold_m": 0.7,
+    "reason": "global_step_limit",
+    "PASS": false,
+    "process_exit_code": 0,
+    "run_summary_exit_code": 2
+  },
+  "gpu_memory_sampling_seconds": 1,
+  "gpu_peak_total_mib": 17685,
+  "gpu_initial_total_mib": 240,
+  "gpu_final_total_mib": 240,
+  "raw_results_local": "grutopia/results/goal_matching_smoke_20261009_1425",
+  "raw_results_remote": "/data/zzx/inter-nav-goal-matching-smoke/grutopia/results/goal_matching_smoke_20261009_1425",
+  "raw_dataset_sha256": "4e11547abf8febce36b84438ba44030a3c3f7592f149f0c39a5cf579da23fd01",
+  "packaged_dataset_sha256": "d663e6626ccc28103678a723b7f12f6847025db66cd81a92119041dad8bfddf8",
+  "cpu_regression": "17/17 on server; 17/17 local after evaluator metadata fix",
+  "runtime_code_changes_during_smoke": false,
+  "other_tasks": "No other service was restarted/stopped or queried for inference. Original server checkout HEAD remained f7eab5948b30855776e3ce59b5a24d1ea6af5fdd. Test service stopped."
+}

@@ -1,6 +1,6 @@
 # Open-vocabulary goal matching：实现与验证（2026-10-09）
 
-本次实现已经完成 CPU 验证，并准备为独立分支 `improve-open-vocabulary-goal-matching` 建立 draft PR。用户在执行过程中要求显卡繁忙时先改代码、稍后测试，因此本报告不包含新的真实模型推理或 Isaac 导航实验，也不宣称真实目标准确率或导航成功率提升。
+初版实现已完成 CPU 验证，独立分支为 `improve-open-vocabulary-goal-matching`，已建立 [draft PR #1](https://github.com/Zheng-Matt/inter-nav-project/pull/1)。本报告记录初版 CPU 实现阶段；后续实际 GPU 0 测试见 [smoke 报告](open-vocabulary-goal-matching-smoke-2026-10-09.md)：三种正查询通过，但属性反例、八帧确认及导航到达未通过。不宣称真实目标准确率或导航成功率提升。
 
 ## 现有调用链与基线
 
@@ -89,9 +89,9 @@ git archive 2a629e91e0e25dcb9aeb4ff5ee126b397d9ebedb | tar -x -C "$baseline_dir"
 
 工具默认创建 `grutopia/results/goal_matching_<时间戳>/comparison.json`，可显式传 `--record-dir`，但必须是尚不存在的目录。输出包含案例预测、分母、完整 matcher 配置、数据 hash、来源和 Python 版本。独立归档没有 `.git` 时 revision 字段为空；冻结基线的 commit 由上面的 `git archive` 命令确定。
 
-## GPU 空闲后的真实实验流程（尚未执行）
+## 完整真实评估计划（尚未完成）
 
-服务器 SSH 已安全认证并完成只读预检；三个既有服务当时就绪，但显卡显存普遍紧张。根据用户后续指示，本次没有追加模型请求、启动新服务或仿真，也没有修改原服务器工作目录。
+初版阶段服务器显存紧张，按用户指示没有启动推理或仿真。后续 GPU 0 单图/回放/最小导航 smoke 已执行并记录失败项；以下多样本、完整在线导航对照仍未完成，原服务器工作目录保持不变。
 
 1. 在自己的分支副本中加载 `/data20t/embodied/share/inter-nav/env.sh`。使用已有 Qwen-VL 独立解释器和本地权重，等 GPU 空闲后启动这次代码的 Qwen-VL 服务。可用独立端口 12186，并向导航传 `--qwen-vl-url http://127.0.0.1:12186/classify`；先检查健康响应 `goal_verification=true`。不要直接重启别人的服务或修改共享环境。
 2. 从现有录制的 RGB 和框标注制作人工核验的红框上下文 crop，保持与 `_qwen_context_crop()` 一致的边距、RGB 顺序和尺寸。正/负样本包含 fridge/refrigerator、功能描述、颜色匹配/冲突、同类不同物体、电视/显示器、不可见房间关系和遮挡。对每个查询独立标注应匹配的候选 ID，不能把模型输出当作真值。
@@ -124,4 +124,4 @@ git archive 2a629e91e0e25dcb9aeb4ff5ee126b397d9ebedb | tar -x -C "$baseline_dir"
 - 红框 crop 保留有限上下文，房间身份、远距离空间关系、材质或隐藏属性可能无法验证；此时应继续观察/探索。
 - 属性证据依赖既有物体关联（0.75m 距离和类别）。非常接近的同类实例仍可能合并，暂未重做实例跟踪。
 - 描述请求增加文本与生成预算，是否改善或损害模型分类、是否超时、端到端延迟及真实导航表现均待 GPU 实验。
-- 尚未在完整 Isaac/模型环境中验证此次运行代码；已有 CPU 检查与模拟导航接口不能替代真实实验。
+- 已在服务器实际模型环境及最小 Isaac 场景运行；仍未完成完整 online open_vocab 描述导航。GPU smoke 中有属性误接受、描述确认票不足和导航未到达，详见后续报告。

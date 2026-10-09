@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "provenance": "Human inspected dark upright double-door refrigerator in historical recording, label text excluded. Single instance, five queries; smoke only.",
+  "cases": [
+    {
+      "id": "smoke-0",
+      "query": "refrigerator",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "refrigerator",
+          "crop": "recorded_fridge_smoke.png"
+        }
+      ]
+    },
+    {
+      "id": "smoke-1",
+      "query": "fridge",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "refrigerator",
+          "crop": "recorded_fridge_smoke.png"
+        }
+      ]
+    },
+    {
+      "id": "smoke-2",
+      "query": "a large appliance used to keep food cold",
+      "classifier": "qwen-vl",
+      "expected": "fridge",
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "refrigerator",
+          "crop": "recorded_fridge_smoke.png"
+        }
+      ]
+    },
+    {
+      "id": "smoke-3",
+      "query": "a red fridge",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "refrigerator",
+          "crop": "recorded_fridge_smoke.png"
+        }
+      ]
+    },
+    {
+      "id": "smoke-4",
+      "query": "a chair with armrests",
+      "classifier": "qwen-vl",
+      "expected": null,
+      "candidates": [
+        {
+          "id": "fridge",
+          "label": "refrigerator",
+          "crop": "recorded_fridge_smoke.png"
+        }
+      ]
+    }
+  ],
+  "source": {
+    "recording": "qwen_vl_refrigerator_20260927_131201",
+    "recorded_commit": "c3e25392f30afa73373a7434a343f7dd08b646a7",
+    "recorded_checkout_dirty": true,
+    "step": 1800,
+    "frame_index": 94,
+    "smoke_bbox_xyxy": [
+      402.4568176269531,
+      55.94660568237305,
+      478.50823974609375,
+      191.8535614013672
+    ],
+    "preprocessing": "Marked context crop with margin=0, top trimmed to exclude title and category text. Recorded red/magenta box lines remain. This smoke crop differs from production padded crops.",
+    "image_sha256": "b4235feffad37df5b7652655f246a593465aa616cf6a6291dd914aa91ac9bf43",
+    "limitation": "One partial object view, five queries. Not representative accuracy, and red/magenta annotations may confound colour matching."
+  }
+}

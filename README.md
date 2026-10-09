@@ -157,8 +157,11 @@ shared across classifiers, and Qwen-VL verifies full descriptions such as
 Description scores are accumulated separately from category votes. An older
 Qwen service without verification fields cannot confirm a description.
 Use `--goal-matching legacy` for the original baseline. Configuration, CPU
-checks, experiment output paths, and pending GPU validation are documented in
+checks and experiment output paths are documented in
 the [goal matching report](docs/reports/open-vocabulary-goal-matching-2026-10-09.md).
+The [GPU 0 smoke report](docs/reports/open-vocabulary-goal-matching-smoke-2026-10-09.md)
+records passed synonym/functional queries and unresolved attribute, temporal
+confirmation, and navigation arrival failures; full online validation is pending.
 
 A finished run prints `semantic_exploration_result` with `"success": true`
 and writes to a new timestamped directory under `grutopia/results/`:

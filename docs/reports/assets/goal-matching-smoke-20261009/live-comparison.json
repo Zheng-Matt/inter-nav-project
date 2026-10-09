@@ -1,0 +1,477 @@
+{
+  "schema_version": 1,
+  "scope": "single-observation object matching; no navigation evaluation",
+  "evidence_kind": "live-human-annotated-crops",
+  "dataset_provenance": "Human inspected dark upright double-door refrigerator in historical recording, label text excluded. Single instance, five queries; smoke only.",
+  "dataset_sha256": "4e11547abf8febce36b84438ba44030a3c3f7592f149f0c39a5cf579da23fd01",
+  "python": "3.10.19 (main, Oct 21 2025, 16:43:05) [GCC 11.2.0]",
+  "baseline_revision": "2a629e91e0e25dcb9aeb4ff5ee126b397d9ebedb",
+  "baseline_root": "/data/zzx/inter-nav-goal-matching-smoke/grutopia/results/goal_matching_smoke_20261009_1425/baseline-main",
+  "implementation_revision": "7186a7dff66a5084feb2de5d3ca7b1623aa6c016",
+  "results": [
+    {
+      "mode": "legacy",
+      "config": {
+        "target_query": "a chair with armrests",
+        "mapping": {
+          "x_limits": [
+            -2.0,
+            9.0
+          ],
+          "y_limits": [
+            -3.0,
+            3.0
+          ],
+          "grid_resolution": 0.1,
+          "voxel_size": 0.1,
+          "obstacle_height": [
+            0.12,
+            1.8
+          ],
+          "point_height": [
+            -0.25,
+            2.75
+          ],
+          "robot_radius": 0.18,
+          "obstacle_inflation_radius": null,
+          "static_obstacle_inflation_radius": null,
+          "occupied_threshold": 0.55,
+          "free_update": 0.3,
+          "occupied_update": 0.85,
+          "sticky_occupied_threshold": 1.5,
+          "sticky_free_scale": 0.0,
+          "unknown_cost": 1.75,
+          "max_lidar_rays": 900,
+          "lidar_scan_bins": 720,
+          "max_voxel_points_per_update": 5000,
+          "graph_stride": 5,
+          "safe_recovery_y_limits": [
+            -1.25,
+            1.25
+          ]
+        },
+        "exploration": {
+          "semantic_evidence_threshold": 0.35,
+          "semantic_weight": 0.45,
+          "path_distance_weight": 0.45,
+          "information_gain_weight": 1.0,
+          "clearance_weight": 0.35,
+          "degree_weight": 0.2,
+          "extensibility_weight": 0.3,
+          "direction_weight": 0.35,
+          "visit_penalty": 0.5,
+          "failure_penalty": 1.5,
+          "dead_end_penalty": 2.0,
+          "information_radius": 0.8,
+          "clearance_radius": 1.0,
+          "reached_tolerance": 0.35,
+          "blacklist_failure_threshold": 2,
+          "max_no_progress_updates": 3,
+          "deadlock_window": 3,
+          "position_quantization": 0.25,
+          "max_graph_json_bytes": 12000,
+          "qwen_timeout_seconds": 8.0
+        },
+        "voronoi": {
+          "min_clearance": 0.0,
+          "spur_length": 0.3,
+          "frontier_min_size": 1,
+          "incremental": true,
+          "verify_incremental": false,
+          "incremental_margin_cells": 4,
+          "incremental_guard_cells": 3,
+          "incremental_max_window_fraction": 0.75,
+          "region_segmentation": true,
+          "doorway_max_width": 1.6,
+          "doorway_clearance_ratio": 1.0
+        },
+        "max_steps": 12000,
+        "target_distance": 0.7,
+        "frontier_reached_distance": 0.45,
+        "fall_height": 0.12,
+        "safe_base_height": 0.22,
+        "semantic_detection_mode": "hybrid",
+        "open_vocabulary_startup_error": null,
+        "target_semantic_classifier": "qwen-vl",
+        "target_min_observations": 1,
+        "target_embedding_threshold": 0.24,
+        "require_lexical_confirmation": true,
+        "target_confirmation_min_label_observations": 1,
+        "target_confirmation_min_label_fraction": 0.6,
+        "frontier_selection_interval": 160,
+        "topology_update_interval": 40,
+        "max_forward_speed": 0.8,
+        "max_lateral_speed": 0.2,
+        "enable_target_cues": true,
+        "target_cue_stale_steps": 480,
+        "target_cue_navigation_steps": 1200,
+        "target_cue_observe_steps": 96,
+        "target_cue_cooldown_steps": 800
+      },
+      "metrics": {
+        "cases": 5,
+        "positives": 3,
+        "negatives": 2,
+        "accuracy": 0.8,
+        "positive_recall": 0.6666666666666666,
+        "false_match_rate_on_absent_goals": 0.0,
+        "precision": 1.0,
+        "service_errors": 0,
+        "warm_matching_median_us": 19.6445,
+        "warm_matching_p95_us": 30.612199999999994,
+        "service_request_median_ms": 241.21880298480392
+      },
+      "cases": [
+        {
+          "id": "smoke-0",
+          "query": "refrigerator",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "b4235feffad37df5b7652655f246a593465aa616cf6a6291dd914aa91ac9bf43"
+          }
+        },
+        {
+          "id": "smoke-1",
+          "query": "fridge",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "b4235feffad37df5b7652655f246a593465aa616cf6a6291dd914aa91ac9bf43"
+          }
+        },
+        {
+          "id": "smoke-2",
+          "query": "a large appliance used to keep food cold",
+          "expected": "fridge",
+          "predicted": null,
+          "correct": false,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "b4235feffad37df5b7652655f246a593465aa616cf6a6291dd914aa91ac9bf43"
+          }
+        },
+        {
+          "id": "smoke-3",
+          "query": "a red fridge",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "b4235feffad37df5b7652655f246a593465aa616cf6a6291dd914aa91ac9bf43"
+          }
+        },
+        {
+          "id": "smoke-4",
+          "query": "a chair with armrests",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "b4235feffad37df5b7652655f246a593465aa616cf6a6291dd914aa91ac9bf43"
+          }
+        }
+      ],
+      "matcher_source_sha256": "8cc6298bf8deb2b2872f94b954ff509806b4388c88ad9bc1380a3582b5bd1805"
+    },
+    {
+      "mode": "robust",
+      "config": {
+        "target_query": "a chair with armrests",
+        "mapping": {
+          "x_limits": [
+            -2.0,
+            9.0
+          ],
+          "y_limits": [
+            -3.0,
+            3.0
+          ],
+          "grid_resolution": 0.1,
+          "voxel_size": 0.1,
+          "obstacle_height": [
+            0.12,
+            1.8
+          ],
+          "point_height": [
+            -0.25,
+            2.75
+          ],
+          "robot_radius": 0.18,
+          "obstacle_inflation_radius": null,
+          "static_obstacle_inflation_radius": null,
+          "occupied_threshold": 0.55,
+          "free_update": 0.3,
+          "occupied_update": 0.85,
+          "sticky_occupied_threshold": 1.5,
+          "sticky_free_scale": 0.0,
+          "unknown_cost": 1.75,
+          "max_lidar_rays": 900,
+          "lidar_scan_bins": 720,
+          "max_voxel_points_per_update": 5000,
+          "graph_stride": 5,
+          "safe_recovery_y_limits": [
+            -1.25,
+            1.25
+          ]
+        },
+        "exploration": {
+          "semantic_evidence_threshold": 0.35,
+          "semantic_weight": 0.45,
+          "path_distance_weight": 0.45,
+          "information_gain_weight": 1.0,
+          "clearance_weight": 0.35,
+          "degree_weight": 0.2,
+          "extensibility_weight": 0.3,
+          "direction_weight": 0.35,
+          "visit_penalty": 0.5,
+          "failure_penalty": 1.5,
+          "dead_end_penalty": 2.0,
+          "information_radius": 0.8,
+          "clearance_radius": 1.0,
+          "reached_tolerance": 0.35,
+          "blacklist_failure_threshold": 2,
+          "max_no_progress_updates": 3,
+          "deadlock_window": 3,
+          "position_quantization": 0.25,
+          "max_graph_json_bytes": 12000,
+          "qwen_timeout_seconds": 8.0
+        },
+        "voronoi": {
+          "min_clearance": 0.0,
+          "spur_length": 0.3,
+          "frontier_min_size": 1,
+          "incremental": true,
+          "verify_incremental": false,
+          "incremental_margin_cells": 4,
+          "incremental_guard_cells": 3,
+          "incremental_max_window_fraction": 0.75,
+          "region_segmentation": true,
+          "doorway_max_width": 1.6,
+          "doorway_clearance_ratio": 1.0
+        },
+        "max_steps": 12000,
+        "target_distance": 0.7,
+        "frontier_reached_distance": 0.45,
+        "fall_height": 0.12,
+        "safe_base_height": 0.22,
+        "semantic_detection_mode": "hybrid",
+        "open_vocabulary_startup_error": null,
+        "target_semantic_classifier": "qwen-vl",
+        "target_min_observations": 1,
+        "target_embedding_threshold": 0.24,
+        "goal_matching": {
+          "mode": "robust",
+          "verify_descriptions": true,
+          "description_threshold": 0.8,
+          "embedding_margin": 0.03,
+          "min_node_confidence": 0.1
+        },
+        "require_lexical_confirmation": true,
+        "target_confirmation_min_label_observations": 1,
+        "target_confirmation_min_label_fraction": 0.6,
+        "frontier_selection_interval": 160,
+        "topology_update_interval": 40,
+        "max_forward_speed": 0.8,
+        "max_lateral_speed": 0.2,
+        "enable_target_cues": true,
+        "target_cue_stale_steps": 480,
+        "target_cue_navigation_steps": 1200,
+        "target_cue_observe_steps": 96,
+        "target_cue_cooldown_steps": 800
+      },
+      "metrics": {
+        "cases": 5,
+        "positives": 3,
+        "negatives": 2,
+        "accuracy": 0.8,
+        "positive_recall": 1.0,
+        "false_match_rate_on_absent_goals": 0.5,
+        "precision": 0.75,
+        "service_errors": 0,
+        "warm_matching_median_us": 18.308999999999997,
+        "warm_matching_p95_us": 41.14325,
+        "service_request_median_ms": 391.58787205815315
+      },
+      "cases": [
+        {
+          "id": "smoke-0",
+          "query": "refrigerator",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "b4235feffad37df5b7652655f246a593465aa616cf6a6291dd914aa91ac9bf43"
+          }
+        },
+        {
+          "id": "smoke-1",
+          "query": "fridge",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "not_requested",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\"}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "b4235feffad37df5b7652655f246a593465aa616cf6a6291dd914aa91ac9bf43"
+          }
+        },
+        {
+          "id": "smoke-2",
+          "query": "a large appliance used to keep food cold",
+          "expected": "fridge",
+          "predicted": "fridge",
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 0.9,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\",\"goal_match_score\":0.9}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "b4235feffad37df5b7652655f246a593465aa616cf6a6291dd914aa91ac9bf43"
+          }
+        },
+        {
+          "id": "smoke-3",
+          "query": "a red fridge",
+          "expected": null,
+          "predicted": "fridge",
+          "correct": false,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": 0.9,
+              "goal_verification_status": "verified",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\",\"goal_match_score\":0.9}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "b4235feffad37df5b7652655f246a593465aa616cf6a6291dd914aa91ac9bf43"
+          }
+        },
+        {
+          "id": "smoke-4",
+          "query": "a chair with armrests",
+          "expected": null,
+          "predicted": null,
+          "correct": true,
+          "service_errors": [],
+          "model_outputs": [
+            {
+              "id": "fridge",
+              "goal_match_score": null,
+              "goal_verification_status": "abstained",
+              "label": "refrigerator",
+              "model": "/data20t/embodied/wzj/internnav_data/checkpoints/Qwen3-VL-8B-Instruct",
+              "raw_text": "{\"label\":\"refrigerator\",\"goal_match_score\":null}",
+              "reason": "classified"
+            }
+          ],
+          "image_sha256": {
+            "fridge": "b4235feffad37df5b7652655f246a593465aa616cf6a6291dd914aa91ac9bf43"
+          }
+        }
+      ],
+      "matcher_source_sha256": "7e54ef7cd3acf2cd1f06f0844f1c5292744b48375329cd18602ecfb728cd833c"
+    }
+  ],
+  "metadata_correction": {
+    "original_raw_baseline_revision": "7186a7dff66a5084feb2de5d3ca7b1623aa6c016",
+    "reason": "git rev-parse in a nested archive inherited the enclosing checkout. The archived baseline was git archive 2a629e91e0e25dcb9aeb4ff5ee126b397d9ebedb.",
+    "verification": "SHA-256 of frozen main semantic_exploration_component.py matches the legacy worker matcher_source_sha256: 8cc6298bf8deb2b2872f94b954ff509806b4388c88ad9bc1380a3582b5bd1805. Raw JSON preserved under grutopia/results."
+  }
+}
