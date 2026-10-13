@@ -9,7 +9,9 @@ import re
 import cv2
 import numpy as np
 from flask import Flask, jsonify, request
-from grutopia_extension.interactive_navigation.goal_matching import goal_verification_prompt, parse_goal_score
+from grutopia_extension.interactive_navigation.goal_matching import (
+    description_category_matches, goal_verification_prompt, parse_goal_score,
+)
 
 
 def parse_args():
@@ -152,16 +154,45 @@ def _qwen_vl_app(args):
     app = Flask('qwen-vl')
     app.config['MAX_CONTENT_LENGTH'] = 4 * 1024 * 1024
 
+    def generate(images, prompt, budget):
+        messages = [{'role': 'user', 'content': [
+            *({'type': 'image', 'image': image} for image in images),
+            {'type': 'text', 'text': prompt},
+        ]}]
+        text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        inputs = processor(text=[text], images=images, return_tensors='pt',
+                           min_pixels=64 * 64, max_pixels=args.vl_max_pixels).to(model.device)
+        with torch.inference_mode():
+            generated = model.generate(**inputs, max_new_tokens=budget, do_sample=False)
+        return processor.batch_decode(
+            generated[:, inputs['input_ids'].shape[1]:], skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )[0].strip()
+
+    def parse_output(raw_text, labels):
+        cleaned = raw_text
+        if cleaned.startswith('```') and cleaned.endswith('```'):
+            cleaned = re.sub(r'^```(?:json)?\s*', '', cleaned)[:-3].strip()
+        result = json.loads(cleaned)
+        if not isinstance(result, dict) or result.get('label') not in labels:
+            raise ValueError('label is outside requested categories')
+        return result
+
     @app.get('/health')
     def health():
         return jsonify({'ready': True, 'service': 'qwen-vl', 'model': args.qwen_vl_model,
                         'goal_verification': True,
+                        'goal_verification_mode': 'category_then_goal',
+                        'multi_view': True, 'max_reference_images': 2,
                         'max_pixels': args.vl_max_pixels, 'max_new_tokens': args.vl_max_new_tokens})
 
     @app.post('/classify')
     def classify():
         payload = request.get_json(force=True)
         target_query = payload.get('target_query')
+        verify_goal = payload.get('verify_goal', True)
+        if not isinstance(verify_goal, bool):
+            return jsonify({'error': 'verify_goal must be boolean'}), 400
         if target_query is not None and (not isinstance(target_query, str)
                                         or not target_query.strip() or len(target_query) > 512):
             return jsonify({'error': 'target_query must be nonempty text of at most 512 characters'}), 400
@@ -170,11 +201,22 @@ def _qwen_vl_app(args):
                 or any(not isinstance(label, str) or not re.fullmatch(r'[a-z][a-z0-9 -]{0,63}', label)
                        for label in labels) or 'unknown' not in labels):
             return jsonify({'error': 'labels must contain up to 64 short English categories and unknown'}), 400
-        image = Image.fromarray(_decode_image(payload['image']))
-        # Cap visual tokens independently of the client's crop size.
-        scale = min(1.0, (args.vl_max_pixels / (image.width * image.height)) ** 0.5)
-        if scale < 1:
-            image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))))
+        if 'image' not in payload:
+            return jsonify({'error': 'image is required'}), 400
+        references = payload.get('reference_images', [])
+        if (not isinstance(references, list) or len(references) > 2 or
+                any(not isinstance(value, str) or not value for value in references)):
+            return jsonify({'error': 'reference_images must contain at most two encoded images'}), 400
+        images = []
+        try:
+            for encoded in [payload['image'], *references]:
+                image = Image.fromarray(_decode_image(encoded))
+                scale = min(1.0, (args.vl_max_pixels / (image.width * image.height)) ** 0.5)
+                if scale < 1:
+                    image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))))
+                images.append(image)
+        except (ValueError, TypeError, cv2.error):
+            return jsonify({'error': 'invalid encoded image'}), 400
         prompt = (
             'Classify the main object inside the red rectangle. The surrounding real background '
             'is context only. Ignore the red outline itself. Do not classify a different background object. '
@@ -184,44 +226,46 @@ def _qwen_vl_app(args):
             'Choose exactly one category from: ' + ', '.join(labels) + '. '
         )
         if target_query is not None:
-            prompt += goal_verification_prompt(target_query)
-        else:
-            prompt += 'Return ONLY a JSON object with one key, for example {"label":"chair"}.'
-        messages = [{'role': 'user', 'content': [
-            {'type': 'image', 'image': image}, {'type': 'text', 'text': prompt},
-        ]}]
-        # Explicit PIL input keeps image loading local and avoids fetching any URL.
-        text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = processor(text=[text], images=[image], return_tensors='pt',
-                           min_pixels=64 * 64, max_pixels=args.vl_max_pixels).to(model.device)
-        with torch.inference_mode():
-            generated = model.generate(**inputs, max_new_tokens=(
-                max(128, args.vl_max_new_tokens) if target_query is not None else args.vl_max_new_tokens
-            ), do_sample=False)
-        raw_text = processor.batch_decode(
-            generated[:, inputs['input_ids'].shape[1]:], skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )[0].strip()
-        # Invalid output is unknown, never a detector-label or simulator-label fallback.
-        cleaned = raw_text
-        if cleaned.startswith('```') and cleaned.endswith('```'):
-            cleaned = re.sub(r'^```(?:json)?\s*', '', cleaned)[:-3].strip()
+            prompt += 'Distinguish a bed and mattress from a sofa, dining chair or table. '
+        if references:
+            prompt += ('The first image is the current view. The other images are earlier views of the '
+                       'same tracked object. Classify that object using all views. If the views appear '
+                       'to show different objects, choose unknown. Do not combine contradictory attributes. ')
+        category_prompt = prompt + 'Return ONLY a JSON object with one key, for example {"label":"chair"}.'
+        # The navigation query is deliberately absent from the first inference.
+        category_text = raw_text = generate(images, category_prompt, args.vl_max_new_tokens)
         reason = 'classified'
         goal_score = None
         verification_status = 'not_requested'
         try:
-            result = json.loads(cleaned)
-            label = result.get('label') if isinstance(result, dict) else None
-            if label not in labels:
-                raise ValueError('label is outside requested categories')
+            label = parse_output(category_text, labels)['label']
             if target_query is not None:
-                goal_score = parse_goal_score(result.get('goal_match_score')) if label != 'unknown' else None
-                verification_status = 'verified' if goal_score is not None else 'abstained'
+                verification_status = 'abstained'
+                if not verify_goal:
+                    verification_status = 'prefiltered'
+                elif label != 'unknown' and description_category_matches(target_query, label, labels):
+                    raw_text = generate(images, prompt +
+                        'The query-independent classification was ' + json.dumps(label) +
+                        '. Evaluate that SAME object. Do not change its category to fit the goal. ' +
+                        goal_verification_prompt(target_query), max(128, args.vl_max_new_tokens))
+                    result = parse_output(raw_text, labels)
+                    observed = result.get('observed_object')
+                    if result['label'] != label or (isinstance(observed, str) and
+                            not description_category_matches(observed, label, labels)):
+                        reason = verification_status = 'category_conflict'
+                    elif isinstance(observed, str) and observed.strip():
+                        goal_score = parse_goal_score(result.get('goal_match_score'))
+                        verification_status = 'verified' if goal_score is not None else 'abstained'
+                elif label != 'unknown':
+                    reason = verification_status = 'category_mismatch'
         except (ValueError, TypeError):
             label, reason = 'unknown', 'invalid_output'
             verification_status = 'invalid_output' if target_query is not None else 'not_requested'
         return jsonify({'label': label, 'model': args.qwen_vl_model,
                         'goal_match_score': goal_score, 'goal_verification_status': verification_status,
+                        'category_raw_text': category_text,
+                        'goal_verification_mode': 'category_then_goal',
+                        'view_count': len(images),
                         'raw_text': raw_text, 'reason': reason})
 
     return app

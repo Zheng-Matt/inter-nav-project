@@ -11,11 +11,23 @@ target confirmation → reachable approach point. Exact aliases are shared acros
 classifiers. The original Qwen path already supported `fridge`; robust matching
 also replaces permissive substring matches and preserves descriptive attributes.
 
-Qwen-VL reports the observed category/color before evaluating the full query.
+For descriptions, Qwen-VL first classifies the crop without receiving the goal.
+A second inference reviews the full description while keeping that category
+fixed. A changed category or a contradictory observed-object description is
+rejected, even when the reported score is high. An explicit head category such
+as `gray sofa` cannot confirm a `bed`. Functional wording without a known head
+category still requires visual review; rules do not assign it a category.
+
+Positive description evidence also abstains when a known detector category and
+the reviewed category disagree. Detector categories are proposals, not ground
+truth. Existing expanded search terms (`monitor`/`screen` for television, for
+example) remain compatible proposals and do not become category aliases.
 Invalid or missing scores, unknown objects and unverifiable relationships do not
 confirm a description. Evidence is kept separately for each object and query;
-repeated detections from one capture step do not add extra votes. Older Qwen
-services can still classify categories but cannot confirm descriptions.
+repeated detections from one capture step do not add extra votes. Services that
+do not return a valid description score cannot confirm descriptions. Restart
+the VL service from the updated checkout to enable the two-inference review;
+its health response reports `goal_verification_mode: category_then_goal`.
 
 ## Configuration
 

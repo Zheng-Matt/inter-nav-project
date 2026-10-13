@@ -21,8 +21,11 @@ class GoalMatchingConfig:
     description_threshold: float = 0.80
     embedding_margin: float = 0.03
     min_node_confidence: float = 0.10
+    require_proposal_agreement: bool = True
 
     def __post_init__(self):
+        if not isinstance(self.require_proposal_agreement, bool):
+            raise ValueError('require_proposal_agreement must be boolean')
         if self.mode not in ('robust', 'legacy'):
             raise ValueError('goal matching mode must be robust or legacy')
         for name in ('description_threshold', 'min_node_confidence'):
@@ -113,6 +116,42 @@ def normalized_embedding(value):
         return None
     norm = float(np.linalg.norm(vector))
     return None if not math.isfinite(norm) or norm <= 1e-12 else vector / norm
+
+
+def description_category_matches(query, label, categories):
+    """Check an explicit head category, without guessing a functional category.
+
+    This is a rejection guard, never positive evidence for attributes or rooms.
+    Unknown wording and alternatives without a category still need VLM review.
+    """
+    known = set(categories) - {'unknown'}
+    for alternative in GoalQuery.parse(query).alternatives:
+        head = re.split(r'\b(?:used|with|without|that|which|in|on|near|beside|behind|next|for)\b',
+                        alternative, maxsplit=1)[0].strip()
+        words = head.split()
+        if set(words) & {'not', 'except', 'but'}:
+            return True  # Complex negation is not a simple head-category constraint.
+        category = next((canonical_semantic_label(' '.join(words[-length:]))
+                         for length in range(min(4, len(words)), 0, -1)
+                         if canonical_semantic_label(' '.join(words[-length:])) in known), None)
+        if category is None or category == canonical_semantic_label(label):
+            return True
+    return False
+
+
+def description_match_rejection(query, label, proposal_label, categories, config, score, search_terms=()):
+    """Return why a positive VLM result must abstain; do not promote proposals."""
+    score = parse_goal_score(score)
+    if score is None or score < config.description_threshold:
+        return None
+    if not description_category_matches(query, label, categories):
+        return 'category_mismatch'
+    proposal = canonical_semantic_label(proposal_label)
+    searches = {canonical_semantic_label(term) for term in search_terms}
+    if (config.require_proposal_agreement and proposal in categories and proposal not in searches and
+            proposal not in ('unknown', canonical_semantic_label(label))):
+        return 'proposal_disagreement'
+    return None
 
 
 def goal_verification_prompt(query):

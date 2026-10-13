@@ -13,6 +13,7 @@ from grutopia_extension.interactive_navigation.goal_matching import (
     GoalQuery,
     normalized_embedding,
     parse_goal_score,
+    description_category_matches,
 )
 from grutopia_extension.interactive_navigation.mapping import MappingConfig, SemanticDetection
 from grutopia_extension.interactive_navigation.mapping_runtime import _deduplicate_semantic_detections
@@ -27,6 +28,18 @@ from grutopia_extension.interactive_navigation.semantic_exploration_component im
 
 
 class GoalMatchingTest(unittest.TestCase):
+    def test_description_head_category_guards_without_inventing_functional_class(self):
+        labels = ['sofa', 'bed', 'refrigerator', 'chair', 'table', 'unknown']
+        for query, label, expected in [
+            ('a gray sofa', 'bed', False), ('a gray couch', 'sofa', True),
+            ('a bed used for sleeping', 'sofa', False), ('white fridge', 'refrigerator', True),
+            ('a chair beside the bed', 'chair', True), ('a chair beside the bed', 'bed', False),
+            ('furniture used for sleeping', 'sofa', True),
+            ('the white appliance in the kitchen', 'refrigerator', True),
+            ('gray sofa | white bed', 'bed', True), ('gray sofa | white bed', 'table', False),
+        ]:
+            with self.subTest(query=query, label=label):
+                self.assertEqual(description_category_matches(query, label, labels), expected)
     def component(self, query='fridge', classifier='qwen-vl', perception=None, **options):
         return SemanticExplorationComponent(
             SemanticExplorationConfig(
