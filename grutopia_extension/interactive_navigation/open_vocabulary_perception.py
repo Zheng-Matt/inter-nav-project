@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import math
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Optional, Sequence, Tuple
 
@@ -13,7 +14,10 @@ import numpy as np
 import requests
 
 from grutopia_extension.interactive_navigation.mapping import SemanticDetection
-from grutopia_extension.interactive_navigation.goal_matching import GoalMatchingConfig, GoalQuery, parse_goal_score
+from grutopia_extension.interactive_navigation.object_observations import MultiViewMemory, robust_object_geometry
+from grutopia_extension.interactive_navigation.goal_matching import (
+    GoalMatchingConfig, GoalQuery, description_match_rejection, normalized_embedding, parse_goal_score,
+)
 
 
 BBox = Tuple[float, float, float, float]
@@ -29,6 +33,7 @@ class TargetObservationCue:
     position: Tuple[float, float, float]
     confidence: float
     step: int
+    instance_id: Optional[str] = None
 
 # Normalize exact aliases; do not equate monitor with television.
 LABEL_ALIASES = {
@@ -89,12 +94,21 @@ class OpenVocabularyPerceptionConfig:
     qwen_vl_crop_margin: float = 0.15
     qwen_vl_crop_max_side: int = 384
     qwen_vl_crop_mode: str = 'masked'
+    description_clip_prefilter: bool = False
+    description_clip_threshold: float = 0.15
+    geometry_filter: bool = True
+    multi_view: bool = False
+    multi_view_min_angle: float = 20.0
     semantic_ground_height: Optional[float] = None
     semantic_ground_clearance: float = 0.02
     proposal_nms_iou: float = 0.80
     goal_matching: GoalMatchingConfig = field(default_factory=GoalMatchingConfig)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.geometry_filter, bool) or not isinstance(self.multi_view, bool):
+            raise ValueError('geometry_filter and multi_view must be boolean')
+        if not math.isfinite(self.multi_view_min_angle) or not 5 <= self.multi_view_min_angle <= 90:
+            raise ValueError('multi_view_min_angle must be between 5 and 90 degrees')
         if self.semantic_classifier not in ('qwen-vl', 'clip'):
             raise ValueError('semantic_classifier must be qwen-vl or clip')
         if not self.qwen_vl_url.strip() or self.qwen_vl_timeout <= 0:
@@ -103,6 +117,10 @@ class OpenVocabularyPerceptionConfig:
             raise ValueError('Qwen-VL crop size must be >=64 and candidate limit >=1')
         if self.qwen_vl_crop_mode not in ('context', 'masked'):
             raise ValueError('Qwen-VL crop mode must be context or masked')
+        if not isinstance(self.description_clip_prefilter, bool):
+            raise ValueError('description_clip_prefilter must be boolean')
+        if not math.isfinite(self.description_clip_threshold) or not -1 <= self.description_clip_threshold <= 1:
+            raise ValueError('description_clip_threshold must be finite and between -1 and 1')
         if self.semantic_ground_height is not None and not math.isfinite(self.semantic_ground_height):
             raise ValueError('semantic ground height must be finite or None')
         if not math.isfinite(self.semantic_ground_clearance) or self.semantic_ground_clearance < 0:
@@ -136,6 +154,11 @@ class OpenVocabularyDetection:
     proposal_source: str = 'legacy'
     goal_query: Optional[str] = None
     goal_match_score: Optional[float] = None
+    instance_id: Optional[str] = None
+    bounds: Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]] = None
+    position_quality: float = 1.0
+    view_support: int = 1
+    goal_view_support: int = 0
 
     def to_semantic_detection(self) -> SemanticDetection:
         """Convert the spatial portion to the mapping module's current type."""
@@ -154,6 +177,8 @@ class OpenVocabularyDetection:
             sources=('open_vocabulary', 'qwen_vl') if self.label_source == 'qwen-vl' else ('open_vocabulary',),
             goal_query=self.goal_query,
             goal_match_score=self.goal_match_score,
+            instance_id=self.instance_id, bounds=self.bounds, position_quality=self.position_quality,
+            view_support=self.view_support, goal_view_support=self.goal_view_support,
         )
 
 
@@ -225,6 +250,8 @@ class AgentVLMBackend:
                         'service', 'model', 'checkpoint', 'box_threshold', 'text_threshold',
                         'max_pixels', 'max_new_tokens',
                         'goal_verification',
+                        'goal_verification_mode',
+                        'multi_view', 'max_reference_images',
                     ) if key in payload
                 },
             }
@@ -245,12 +272,16 @@ class AgentVLMBackend:
             for box, score, label in zip(boxes, scores, labels)
         ]
 
-    def classify(self, image: np.ndarray, labels: Sequence[str], target_query: Optional[str] = None) -> dict:
+    def classify(self, image: np.ndarray, labels: Sequence[str], target_query: Optional[str] = None,
+                 verify_goal: bool = True, reference_images: Sequence[np.ndarray] = ()) -> dict:
         # This service runs in the VL environment, not inside Isaac Sim.
         response = self._session.post(
             self.config.qwen_vl_url,
             json={'image': self._encode_image(image), 'labels': list(labels),
-                  **({'target_query': target_query} if target_query is not None else {})},
+                  **({'target_query': target_query} if target_query is not None else {}),
+                  **({'verify_goal': False} if not verify_goal else {}),
+                  **({'reference_images': [self._encode_image(view) for view in reference_images]}
+                     if reference_images else {})},
             timeout=self.config.qwen_vl_timeout,
             proxies={'http': '', 'https': ''},
         )
@@ -307,6 +338,11 @@ class OpenVocabularyPerception:
         self._clip_processor: Optional[Any] = None
         self._clip_model: Optional[Any] = None
         self._clip_device: Optional[str] = None
+        self._clip_goal_texts = OrderedDict()
+        self._clip_prefilter_error = None
+        self._view_memory = MultiViewMemory(min_angle=self.config.multi_view_min_angle)
+        self._camera_position = None
+        self._last_capture_key = None
         self.last_item_errors: list[dict] = []
         self.last_query_status = 'idle'
         self.last_target_cues: list[TargetObservationCue] = []
@@ -319,7 +355,8 @@ class OpenVocabularyPerception:
 
         services = {}
         checked = set()
-        for component in (self.detector, self.segmenter):
+        components = (self.detector,self.segmenter) + ((self.classifier,) if self.config.semantic_classifier=='qwen-vl' else ())
+        for component in components:
             if id(component) in checked:
                 continue
             checked.add(id(component))
@@ -331,9 +368,18 @@ class OpenVocabularyPerception:
         load_clip = load_clip and self.config.semantic_classifier == 'clip'
         if load_clip and self.embedder is None:
             self._ensure_clip()
+        prefilter = self.config.description_clip_prefilter and self.config.semantic_classifier == 'qwen-vl'
+        if prefilter and self.embedder is None:
+            try:
+                self._ensure_clip()
+            except Exception as error:
+                self._clip_prefilter_error = type(error).__name__
         return {
             'services': services,
             'clip_device': self._clip_device if load_clip else None,
+            **({'clip_prefilter': {'ready': self._clip_prefilter_error is None,
+                                  'device': self._clip_device,
+                                  'error': self._clip_prefilter_error}} if prefilter else {}),
         }
 
     def build_query(self, target: str, include_context: bool = True) -> str:
@@ -387,11 +433,18 @@ class OpenVocabularyPerception:
         target: str,
         include_context: bool = True,
         step: int = 0,
+        camera_position: Optional[Sequence[float]] = None,
+        capture_step: Optional[int] = None,
     ) -> list[Any]:
         self.last_item_errors = []
         self.last_debug_frame = None
         self.last_target_cues = []
         rgb, depth_array, points = self._validate_inputs(rgba, depth, point_image)
+        if camera_position is not None:
+            camera_position = np.asarray(camera_position, dtype=float)
+            if camera_position.shape != (3,) or not np.isfinite(camera_position).all():
+                raise ValueError('camera_position must contain three finite coordinates')
+        self._camera_position = camera_position
         query = self.build_query(target, include_context=include_context)
         queries = [('legacy', query)]
         if self.config.semantic_classifier == 'qwen-vl':
@@ -406,6 +459,7 @@ class OpenVocabularyPerception:
             'target_query': target,
             'classifier': self.config.semantic_classifier,
             'image_size': [int(rgb.shape[1]), int(rgb.shape[0])],
+            'camera_position': None if camera_position is None else camera_position.tolist(),
             'boxes': [],
             'mapped': [],
             'classified': [],
@@ -414,6 +468,15 @@ class OpenVocabularyPerception:
             'item_errors': [],
         }
         self.last_debug_frame = debug_frame
+        if capture_step is not None:
+            capture_key = (int(capture_step), query_key)
+            if (capture_key == self._last_capture_key or
+                    (self._last_capture_key is not None and int(capture_step) < self._last_capture_key[0])):
+                self.last_query_status = debug_frame['status'] = 'duplicate_capture'
+                return []
+            self._last_capture_key = capture_key
+            step = int(capture_step)
+            debug_frame['capture_step'] = step
         if query_key == self._last_query and now - self._last_query_time < self.config.query_interval:
             # A materialized detection contains geometry from a particular
             # RGB/depth frame. Replaying it would submit a stale world-space
@@ -445,6 +508,8 @@ class OpenVocabularyPerception:
                     'bbox_xyxy': [float(value) for value in detection.bbox],
                     'centroid': [float(value) for value in detection.centroid],
                     'point_count': int(detection.point_count),
+                    'instance_id': detection.instance_id, 'bounds': detection.bounds,
+                    'position_quality': detection.position_quality,
                 }
                 for detection in result
                 if isinstance(detection, OpenVocabularyDetection)
@@ -562,6 +627,7 @@ class OpenVocabularyPerception:
             proposals = self._select_proposals(proposals, step)
         goal = GoalQuery.parse(target) if target else None
         robust = self.config.goal_matching.mode == 'robust'
+        self._view_memory.begin_frame(int(step))
         target_labels = goal.alternatives if robust and goal and not goal.descriptive else self._target_labels(target)
         if robust and goal and goal.descriptive:
             target_labels = ()  # A description is not a Qwen category.
@@ -576,6 +642,20 @@ class OpenVocabularyPerception:
                 if len(world_points) < self.config.min_points:
                     continue
                 centroid = tuple(float(v) for v in world_points.mean(axis=0))
+                geometry = {'centroid': centroid,
+                            'bounds': tuple(tuple(float(x) for x in row) for row in np.percentile(world_points,(5,95),axis=0)),
+                            'quality': len(world_points)/max(1,int(mask.sum()))}
+                geometry['surface_points'] = world_points[np.linspace(0,len(world_points)-1,min(128,len(world_points)),dtype=int)].copy()
+                if robust and self.config.geometry_filter:
+                    try:
+                        mask, world_points, geometry = robust_object_geometry(
+                            mask, depth, point_image, self.config.min_points)
+                        centroid = geometry['centroid']
+                    except ValueError as error:
+                        if self.last_debug_frame is not None:
+                            self.last_debug_frame['rejected_geometry'].append({
+                                'bbox_xyxy': list(bbox), 'raw_label': label, 'reason': str(error)})
+                        continue
                 # Floor masks must not produce semantic votes or target cues.
                 # Unknown floor height or zero clearance disables this check.
                 if (use_vl and robust and self.config.semantic_ground_height is not None
@@ -592,24 +672,58 @@ class OpenVocabularyPerception:
                             })
                         continue
                 classification = {}
+                view_support = 1
+                instance_id, references, reference_meta = None, [], []
                 verify_goal = (robust and goal and goal.descriptive
                                and self.config.goal_matching.verify_descriptions)
                 if use_vl:
                     crop_mask = mask if robust and self.config.qwen_vl_crop_mode == 'masked' else None
                     crop = self._qwen_context_crop(image, bbox, mask=crop_mask)
+                    if self.config.multi_view and robust and geometry['bounds'] is not None:
+                        instance_id, references, reference_meta = self._view_memory.observe(
+                            crop, image, mask, geometry, self._camera_position, int(step))
+                    view_options = {'reference_images': references} if references else {}
                     if verify_goal:
-                        classification = self.classifier.classify(crop, categories, target_query=str(target))
+                        prefilter = (self._clip_description_prefilter(image, mask, str(target))
+                                     if self.config.description_clip_prefilter and not references else None)
+                        filtered = prefilter is not None and prefilter['status'] == 'filtered'
+                        classification = self.classifier.classify(crop, categories, target_query=str(target),
+                                                                 **({'verify_goal': False} if filtered else {}), **view_options)
                     else:
-                        classification = self.classifier.classify(crop, categories)
+                        prefilter, filtered = None, False
+                        classification = self.classifier.classify(crop, categories, **view_options)
                     final_label = classification.get('label')
                     if final_label not in categories or not classification.get('model'):
                         raise ValueError('classifier returned invalid category or missing model provenance')
+                    classification = dict(classification)
+                    count = classification.get('view_count',1)
+                    if isinstance(count,int) and not isinstance(count,bool) and 1<=count<=1+len(references):
+                        view_support = count
+                    if filtered:
+                        # An older service may ignore verify_goal. Its score must
+                        # still not become positive evidence for this query.
+                        classification.update(goal_match_score=None, goal_verification_status='clip_prefiltered')
+                    rejection = (description_match_rejection(target, final_label, label, categories,
+                                 self.config.goal_matching, classification.get('goal_match_score'),
+                                 search_terms=TARGET_SEARCH_TERMS.get(final_label, ()))
+                                 if verify_goal else None)
+                    if rejection:
+                        final_label = 'unknown'
+                        classification.update(goal_match_score=None, goal_verification_status=rejection, reason=rejection)
                     if self.last_debug_frame is not None:
                         self.last_debug_frame['classified'].append({
                             'raw_label': label, 'label': final_label,
                             'bbox_xyxy': list(bbox), 'proposal_source': proposal_source,
                             'classifier_model': classification['model'],
                             'classifier_response': classification.get('raw_text'),
+                            'classifier_label': classification['label'],
+                            'category_response': classification.get('category_raw_text'),
+                            'instance_id': instance_id, 'reference_views': reference_meta,
+                            'geometry_quality': geometry['quality'],
+                            'requested_view_count': 1 + len(references),
+                            'view_count': classification.get('view_count', 1),
+                            'goal_verification_mode': classification.get('goal_verification_mode'),
+                            **({'clip_prefilter': prefilter} if prefilter is not None else {}),
                             'reason': classification.get('reason', 'classified'),
                             'accepted': final_label != 'unknown',
                             'crop_mode': 'masked' if crop_mask is not None else 'context',
@@ -622,6 +736,7 @@ class OpenVocabularyPerception:
                             target_query=str(target), raw_label=label,
                             classified_label=final_label, position=centroid,
                             confidence=float(confidence), step=int(step),
+                            instance_id=instance_id,
                         )
                         self.last_target_cues.append(cue)
                         if self.last_debug_frame is not None:
@@ -645,6 +760,10 @@ class OpenVocabularyPerception:
                     proposal_source=proposal_source,
                     goal_query=goal.text if robust and goal and goal.descriptive else None,
                     goal_match_score=parse_goal_score(classification.get('goal_match_score')) if use_vl and verify_goal else None,
+                    instance_id=instance_id, bounds=geometry['bounds'], position_quality=geometry['quality'],
+                    view_support=view_support,
+                    goal_view_support=(view_support if use_vl and verify_goal and
+                        (parse_goal_score(classification.get('goal_match_score')) or 0)>=self.config.goal_matching.description_threshold else 0),
                 ))
             except Exception as error:
                 self.last_item_errors.append({'label': label, 'type': type(error).__name__, 'message': str(error)})
@@ -772,7 +891,7 @@ class OpenVocabularyPerception:
         self._ensure_clip()
         import torch
 
-        inputs = self._clip_processor(text=[str(text)], return_tensors='pt', padding=True)
+        inputs = self._clip_processor(text=[str(text)], return_tensors='pt', padding=True, truncation=True)
         inputs = {name: value.to(self._clip_device) for name, value in inputs.items()}
         with torch.inference_mode():
             features = self._clip_model.get_text_features(**inputs)
@@ -781,6 +900,38 @@ class OpenVocabularyPerception:
         if not np.isfinite(norm) or norm <= 1e-12:
             raise ValueError('CLIP returned an invalid text embedding')
         return embedding / norm
+
+    def _clip_description_prefilter(self, image, mask, query):
+        """CLIP may skip goal review, never classify or positively confirm it."""
+        started = time.monotonic()
+        result = {'status': 'fallback', 'similarity': None,
+                  'threshold': self.config.description_clip_threshold}
+        if self._clip_prefilter_error is not None:
+            result['error'] = self._clip_prefilter_error
+        else:
+            try:
+                key = GoalQuery.parse(query).text
+                if key not in self._clip_goal_texts:
+                    vector = self.embed_text(key)
+                    vector = normalized_embedding(vector)
+                    if vector is None:
+                        raise ValueError('invalid CLIP goal embedding')
+                    self._clip_goal_texts[key] = vector
+                    if len(self._clip_goal_texts) > 64:
+                        self._clip_goal_texts.popitem(last=False)
+                self._clip_goal_texts.move_to_end(key)
+                vector = self._embed_masked_crop(image, mask)
+                similarity = float(np.dot(self._clip_goal_texts[key], vector))
+                if not math.isfinite(similarity):
+                    raise ValueError('invalid CLIP similarity')
+                result.update(similarity=similarity,
+                              status='filtered' if similarity < self.config.description_clip_threshold else 'passed')
+            except Exception as error:
+                # This is an optional optimization. Keep the Qwen review when
+                # weights or features are unavailable; do not substitute votes.
+                self._clip_prefilter_error = result['error'] = type(error).__name__
+        result['seconds'] = time.monotonic() - started
+        return result
 
     def _ensure_clip(self):
         if self._clip_model is None:

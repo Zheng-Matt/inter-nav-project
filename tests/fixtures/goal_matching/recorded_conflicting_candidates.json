@@ -1,0 +1,48 @@
+{
+  "scope": "Three recorded VLM conflicts from the original full-house run; matcher regression inputs, not a visual accuracy benchmark",
+  "source_commit": "8b0005c173c61b8329ecee6f18b9eda32b9daa5b",
+  "scene": "MV7J6NIKTKJZ2AABAAAAADA8_usd",
+  "cases": [
+    {
+      "id": "dining_table_as_sleeping_sofa",
+      "query": "a piece of furniture used for sleeping",
+      "raw_label": "table",
+      "model_response": {
+        "observed_object": "a beige sofa",
+        "label": "sofa",
+        "goal_match_score": 1.0
+      },
+      "source_frame": 408,
+      "source_bbox": [
+        438.495849609375,
+        120.24520111083984,
+        640.0,
+        182.92042541503906
+      ]
+    },
+    {
+      "id": "sofa_as_bed",
+      "query": "a bed used for sleeping",
+      "raw_label": "sofa",
+      "model_response": {
+        "observed_object": "a gray bed",
+        "label": "bed",
+        "goal_match_score": 1.0
+      },
+      "source_frame": 840,
+      "source_frame_sha256": "722531736fd8e9e5a4b1e2de106da45f7372334fe736be6cafc15c78d746796e"
+    },
+    {
+      "id": "sofa_label_description_conflict",
+      "query": "a gray sofa",
+      "raw_label": "sofa",
+      "model_response": {
+        "observed_object": "a gray bed",
+        "label": "bed",
+        "goal_match_score": 1.0
+      },
+      "source_frame": 840,
+      "source_frame_sha256": "722531736fd8e9e5a4b1e2de106da45f7372334fe736be6cafc15c78d746796e"
+    }
+  ]
+}

@@ -255,6 +255,63 @@ class GoalMatchingTest(unittest.TestCase):
 
 
 class DescriptionPerceptionTest(unittest.TestCase):
+    def test_tv_search_terms_remain_proposals_without_becoming_aliases(self):
+        class Classifier:
+            label = 'television'
+            def classify(self, image, labels, **kwargs):
+                return {'label': self.label, 'model': 'test', 'goal_match_score': 1.0}
+        classifier = Classifier()
+        perception = OpenVocabularyPerception(
+            OpenVocabularyPerceptionConfig(semantic_classifier='qwen-vl', query_interval=0),
+            detector=lambda image, caption: [('monitor', .9, [0, 0, 8, 8])],
+            segmenter=lambda image, bbox: np.ones((8, 8), bool), classifier=classifier,
+        )
+        image = np.ones((8, 8, 3), np.uint8)
+        args = (image, np.ones((8, 8)), np.ones((8, 8, 3)), 'a television used for watching shows')
+        self.assertEqual(perception.perceive(*args)[0].goal_match_score, 1.0)
+        classifier.label = 'monitor'
+        self.assertEqual(perception.perceive(*args), [])
+
+    def test_recorded_conflicts_cannot_accumulate_into_confirmed_targets(self):
+        cases = json.loads((Path(__file__).parent / 'fixtures/goal_matching/recorded_conflicting_candidates.json').read_text())['cases']
+        for case in cases:
+            with self.subTest(case=case['id']):
+                class RecordedClassifier:
+                    def classify(self, image, labels, **kwargs):
+                        return {**case['model_response'], 'model': 'recorded-qwen',
+                                'raw_text': json.dumps(case['model_response'])}
+                p = OpenVocabularyPerception(
+                    OpenVocabularyPerceptionConfig(semantic_classifier='qwen-vl', query_interval=0),
+                    detector=lambda image, caption: [(case['raw_label'], .8, [0, 0, 8, 8])],
+                    segmenter=lambda image, bbox: np.ones((8, 8), bool), classifier=RecordedClassifier(),
+                )
+                component = SemanticExplorationComponent(SemanticExplorationConfig(
+                    target_query=case['query'], target_semantic_classifier='qwen-vl'))
+                for step in range(8):
+                    result = p.perceive(np.ones((8, 8, 3), np.uint8), np.ones((8, 8)),
+                                       np.ones((8, 8, 3)), case['query'], step=step)
+                    component.mapping.map.scene_graph.update_detections(p.as_semantic_detections(result))
+                self.assertIsNone(component._best_target_node())
+                self.assertFalse(component.target_confirmed)
+                self.assertFalse(p.last_debug_frame['classified'][0]['accepted'])
+                self.assertIn(p.last_debug_frame['classified'][0]['reason'],
+                              ['proposal_disagreement', 'category_mismatch'])
+
+    def test_proposal_disagreement_can_be_disabled_without_changing_category(self):
+        class Classifier:
+            def classify(self, image, labels, **kwargs):
+                return {'label': 'sofa', 'model': 'test', 'goal_match_score': 1.0}
+        perception = OpenVocabularyPerception(
+            OpenVocabularyPerceptionConfig(semantic_classifier='qwen-vl',
+                goal_matching=GoalMatchingConfig(require_proposal_agreement=False)),
+            detector=lambda image, caption: [('table', .9, [0, 0, 8, 8])],
+            segmenter=lambda image, bbox: np.ones((8, 8), bool), classifier=Classifier(),
+        )
+        result = perception.perceive(np.ones((8, 8, 3), np.uint8), np.ones((8, 8)),
+                                    np.ones((8, 8, 3)), 'furniture used for sleeping')
+        self.assertEqual(result[0].label, 'sofa')
+        self.assertEqual(result[0].goal_match_score, 1.0)
+
     def test_full_description_is_verified_in_same_classification_and_recorded(self):
         calls = []
 

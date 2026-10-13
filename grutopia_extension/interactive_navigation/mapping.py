@@ -6,6 +6,7 @@ from math import hypot, sqrt
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
+from grutopia_extension.interactive_navigation.object_observations import bounds_overlap, union_bounds
 
 Vector3 = Tuple[float, float, float]
 GridCell = Tuple[int, int]
@@ -87,6 +88,11 @@ class SemanticDetection:
     # Query-specific visual evidence, separate from category votes.
     goal_query: Optional[str] = None
     goal_match_score: Optional[float] = None
+    instance_id: Optional[str] = None
+    bounds: Optional[Tuple[Vector3, Vector3]] = None
+    position_quality: float = 1.0
+    view_support: int = 1
+    goal_view_support: int = 0
 
 
 @dataclass(frozen=True)
@@ -102,6 +108,8 @@ class SceneGraphNode:
     point_count: int = 1
     last_seen_step: int = 0
     sources: Tuple[str, ...] = ()
+    instance_id: Optional[str] = None
+    bounds: Optional[Tuple[Vector3, Vector3]] = None
 
 
 @dataclass(frozen=True)
@@ -506,6 +514,9 @@ class SceneGraphMap:
         self._object_label_counts: Dict[str, Dict[str, int]] = {}
         self._object_goal_scores: Dict[str, Dict[str, list]] = {}
         self._object_goal_steps: Dict[Tuple[str, str], int] = {}
+        self._object_position_history: Dict[str, list] = {}
+        self._object_label_views: Dict[str, dict] = {}
+        self._object_goal_views: Dict[str, dict] = {}
 
     def label_counts(self, node_id: str) -> Dict[str, int]:
         return dict(self._object_label_counts.get(node_id, {}))
@@ -518,6 +529,9 @@ class SceneGraphMap:
         return {node_id: {query: list(scores) for query, scores in queries.items()}
                 for node_id, queries in self._object_goal_scores.items()}
 
+    def view_evidence(self):
+        return {'labels':self._object_label_views,'goals':self._object_goal_views}
+
     def _record_goal_score(self, node_id: str, detection: SemanticDetection):
         score, query = detection.goal_match_score, detection.goal_query
         if (not query or 'qwen_vl' not in detection.sources or canonical_semantic_label(detection.label) == 'unknown'
@@ -529,6 +543,8 @@ class SceneGraphMap:
             return
         self._object_goal_steps[key] = int(detection.step)
         self._object_goal_scores.setdefault(node_id, {}).setdefault(query, []).append(float(score))
+        support=self._object_goal_views.setdefault(node_id,{})
+        support[query]=max(support.get(query,0),detection.goal_view_support)
 
     def update_detections(self, detections: Iterable[SemanticDetection]):
         # One representative per node and capture step. Process the strongest
@@ -545,13 +561,24 @@ class SceneGraphMap:
                 for node in self._objects.values()
                 # Image similarity alone cannot establish object identity across
                 # classes: keep their positions, counts and embeddings separate.
-                if (canonical_semantic_label(node.label) == canonical_semantic_label(label)
+                if ((detection.instance_id is not None and node.instance_id == detection.instance_id)
+                    or (detection.instance_id is not None and node.instance_id is not None
+                        and detection.step > node.last_seen_step
+                        and canonical_semantic_label(node.label) == canonical_semantic_label(label)
+                        and bounds_overlap(node.bounds,detection.bounds) >= 0.80
+                        and np.linalg.norm(np.asarray(node.position)-detection.position) < 0.50)
+                    or (detection.instance_id is None and node.instance_id is None and
+                        (canonical_semantic_label(node.label) == canonical_semantic_label(label)
                     or ('qwen_vl' not in detection.sources and 'qwen_vl' not in node.sources
-                        and _embedding_similarity(node.embedding, detection.embedding) >= 0.86))
+                        and _embedding_similarity(node.embedding, detection.embedding) >= 0.86))))
+                and (detection.bounds is None or node.bounds is None or bounds_overlap(node.bounds, detection.bounds) >= 0.25)
                 and np.linalg.norm(
                     np.asarray(node.position[:2]) - np.asarray(detection.position[:2])
                 )
-                < 0.75
+                < max(0.75,0.5*max(np.linalg.norm(np.subtract(node.bounds[1],node.bounds[0])),
+                        np.linalg.norm(np.subtract(detection.bounds[1],detection.bounds[0])))+0.25
+                      if detection.instance_id is not None and node.instance_id==detection.instance_id
+                      and node.bounds is not None and detection.bounds is not None else 0.75)
             ]
             if candidates:
                 node = min(
@@ -570,6 +597,23 @@ class SceneGraphMap:
                     label_counts[observed] = label_counts.get(observed, 0) + 1
                 position_sum = self._object_position_sums[node.node_id] + np.asarray(detection.position)
                 position = tuple(float(value) for value in position_sum / count)
+                if detection.instance_id is not None:
+                    history = self._object_position_history.setdefault(node.node_id, [node.position])
+                    history.append(detection.position)
+                    del history[:-8]
+                    position = tuple(float(value) for value in np.median(history, axis=0))
+                selected_label = label if float(detection.confidence) > node.confidence + 0.10 else node.label
+                if detection.instance_id is not None:
+                    winner = max(label_counts, key=label_counts.get)
+                    selected_label = (winner if label_counts[winner] >= 2 and
+                                      label_counts[winner] / count >= 0.60 else node.label)
+                    if canonical_semantic_label(selected_label) != canonical_semantic_label(node.label):
+                        self._object_goal_scores.pop(node.node_id, None)
+                        self._object_goal_views.pop(node.node_id,None)
+                        self._object_label_views.pop(node.node_id,None)
+                        for key in list(self._object_goal_steps):
+                            if key[0] == node.node_id:
+                                del self._object_goal_steps[key]
                 color = detection.color if detection.color is not None else node.color
                 confidence = (
                     node.confidence * node.observations + float(detection.confidence)
@@ -591,11 +635,7 @@ class SceneGraphMap:
                     node_id=node.node_id,
                     kind='object',
                     position=position,
-                    label=(
-                        label
-                        if float(detection.confidence) > node.confidence + 0.10
-                        else node.label
-                    ),
+                    label=selected_label,
                     color=color,
                     observations=count,
                     confidence=confidence,
@@ -603,6 +643,8 @@ class SceneGraphMap:
                     point_count=node.point_count + max(1, int(detection.point_count)),
                     last_seen_step=max(node.last_seen_step, int(detection.step)),
                     sources=tuple(dict.fromkeys((*node.sources, *detection.sources))),
+                    instance_id=node.instance_id or detection.instance_id,
+                    bounds=union_bounds(node.bounds,detection.bounds),
                 )
                 self._object_position_sums[node.node_id] = position_sum
             else:
@@ -618,6 +660,7 @@ class SceneGraphMap:
                     point_count=max(1, int(detection.point_count)),
                     last_seen_step=int(detection.step),
                     sources=tuple(dict.fromkeys(detection.sources)),
+                    instance_id=detection.instance_id, bounds=detection.bounds,
                 )
                 self._object_position_sums[node_id] = np.asarray(detection.position, dtype=np.float64)
                 self._object_label_counts[node_id] = {observed: 1 for observed in labels}
@@ -626,7 +669,10 @@ class SceneGraphMap:
                         detection.embedding,
                         dtype=np.float64,
                     )
-            self._record_goal_score(node.node_id if candidates else node_id, detection)
+            identifier=node.node_id if candidates else node_id
+            views=self._object_label_views.setdefault(identifier,{})
+            views[label]=max(views.get(label,0),detection.view_support)
+            self._record_goal_score(identifier,detection)
 
     def object_nodes(self) -> Tuple[SceneGraphNode, ...]:
         return tuple(self._objects.values())

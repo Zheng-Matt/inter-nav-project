@@ -62,6 +62,7 @@ class QwenVLPerceptionTest(unittest.TestCase):
         self.assertEqual(int(crop[0, 0, 0]), 127)  # background hidden by the existing SAM mask
         self.assertEqual(int(crop[crop.shape[0] // 2, crop.shape[1] // 2, 0]), 7)
         self.assertTrue(np.any(np.all(crop == (255, 0, 0), axis=2)))
+        np.testing.assert_array_equal(rgb, np.full((100, 100, 3), 7, np.uint8))
 
     def test_unknown_is_recorded_but_not_mapping_evidence(self):
         p, _, rgb, depth, points = self.make_pipeline('unknown')

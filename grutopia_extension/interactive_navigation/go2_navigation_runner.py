@@ -125,6 +125,11 @@ class Go2SemanticExplorationRunConfig:
     qwen_vl_timeout: float = 60.0
     qwen_vl_max_candidates: int = 12
     qwen_vl_crop_mode: str = 'masked'
+    description_clip_prefilter: bool = False
+    description_clip_threshold: float = 0.15
+    multi_view: bool = False
+    target_min_views: int = 1
+    geometry_filter: bool = True
     semantic_ground_clearance: float = 0.02
     enable_target_cues: bool = True
     enable_qwen: bool = True
@@ -137,6 +142,12 @@ class Go2SemanticExplorationRunConfig:
     def __post_init__(self):
         if not self.target_query.strip():
             raise ValueError('target_query cannot be empty')
+        if not 1<=self.target_min_views<=3:
+            raise ValueError('target_min_views must be between one and three')
+        if any(not isinstance(getattr(self, name), bool) for name in (
+            'multi_view', 'geometry_filter',
+        )):
+            raise ValueError('recognition and mapping switches must be boolean')
         if not math.isfinite(self.target_embedding_threshold) or not -1 <= self.target_embedding_threshold <= 1:
             raise ValueError('target_embedding_threshold must be finite and in [-1, 1]')
         if self.semantic_classifier not in ('qwen-vl', 'clip'):
@@ -145,6 +156,10 @@ class Go2SemanticExplorationRunConfig:
             raise ValueError('VL timeout and candidate count must be positive')
         if self.qwen_vl_crop_mode not in ('context', 'masked'):
             raise ValueError('invalid Qwen-VL crop mode')
+        if not isinstance(self.description_clip_prefilter, bool):
+            raise ValueError('description_clip_prefilter must be boolean')
+        if not math.isfinite(self.description_clip_threshold) or not -1 <= self.description_clip_threshold <= 1:
+            raise ValueError('invalid description CLIP threshold')
         if not math.isfinite(self.semantic_ground_clearance) or self.semantic_ground_clearance < 0:
             raise ValueError('semantic ground clearance must be finite and nonnegative')
         if min(self.gpu, self.perception_gpu) < 0:
@@ -444,6 +459,9 @@ def run_go2_semantic_exploration(
                     qwen_vl_timeout=run.qwen_vl_timeout,
                     qwen_vl_max_candidates=run.qwen_vl_max_candidates,
                     qwen_vl_crop_mode=run.qwen_vl_crop_mode,
+                    description_clip_prefilter=run.description_clip_prefilter,
+                    description_clip_threshold=run.description_clip_threshold,
+                    multi_view=run.multi_view, geometry_filter=run.geometry_filter,
                     semantic_ground_height=run.ground_height,
                     semantic_ground_clearance=run.semantic_ground_clearance,
                 )
@@ -583,6 +601,9 @@ def run_go2_semantic_exploration(
                 max_lateral_speed=profile.max_lateral_speed,
                 semantic_detection_mode=detection_mode.value,
                 target_semantic_classifier=run.semantic_classifier if perception is not None else 'clip',
+                target_min_views=(run.target_min_views if run.multi_view and perception is not None
+                    and getattr(perception.classifier,'last_health_payloads',{}).get('qwen_vl',{}).get('multi_view') is True
+                    and run.goal_matching.mode=='robust' else 1),
                 enable_target_cues=run.enable_target_cues,
                 open_vocabulary_startup_error=perception_startup_error,
             ),

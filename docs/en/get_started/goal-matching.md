@@ -37,6 +37,12 @@ its health response reports `goal_verification_mode: category_then_goal`.
 | `--description-verification` | enabled | `--no-description-verification` disables verification without accepting unverified descriptions. |
 | `--goal-match-confidence` | `0.80` | Minimum Qwen description score; this is not a calibrated 80% probability. |
 | `--goal-node-confidence` | `0.10` | Minimum object detection confidence. |
+| `--goal-proposal-agreement` | enabled | Reject positive description evidence when known detector and reviewed categories conflict. Expanded search terms remain proposals, not aliases. |
+| `--description-clip-prefilter` | disabled | CLIP may skip detailed description review; Qwen still classifies the object. |
+| `--description-clip-threshold` | `0.15` | Image/text cosine gate for running review, separate from Qwen confidence. |
+| `--geometry-filter` | enabled | Filter ambiguous depth layers and coordinate outliers before mapping. |
+| `--multi-view` | disabled | Pass up to two distinct historical views of a conservatively tracked object to Qwen. Robot movement is unchanged. |
+| `--target-min-views` | `1` | Optional distinct-view confirmation requirement (1–3); active only with multi-view and a supporting Qwen service. |
 | `--goal-embedding-threshold` | `0.24` | Minimum CLIP cosine similarity for a provisional target. |
 | `--goal-embedding-margin` | `0.03` | Required lead over the second candidate. |
 | `--qwen-vl-crop-mode` | `masked` | Replace pixels outside the SAM foreground with neutral gray; `context` retains background. |
@@ -150,3 +156,54 @@ and complete-house description navigation remains unverified.
 Further evaluation needs multiple objects/colors, occlusion and confusing
 instances, score calibration, uneven ground, repeated latency measurements,
 and full-house navigation. Cleanup does not change these evidence limits.
+
+
+## Optional CLIP screening and object views
+
+Enable `--description-clip-prefilter` to screen descriptive queries using the
+existing SAM foreground crop and up to 64 cached normalized text embeddings.
+High CLIP similarity is never positive confirmation. Missing weights or invalid
+features fall back to complete Qwen review; scores are never averaged. An older
+service may ignore `verify_goal: false`, but the client discards its score for a
+filtered query. The 56-case diagnostic comparison preserved 52/56 decisions at
+cosine 0.15/0.20; 0.24 reduced review time but rejected two correct descriptions.
+The sample includes repeated queries of the same refrigerator. Screening stays
+disabled because broad accuracy and navigation speed benefits are unproven.
+
+Geometry filtering retains the dominant depth layer and robust coordinate
+median. RGB, depth and compact/full world points must agree pixel-for-pixel;
+invalid world points retain their original pixel locations. Cached captures
+cannot create new observations. `--no-geometry-filter` retains the earlier
+geometry estimate for comparison.
+
+Enable `--multi-view` to associate nearby geometry, observed bounds, surface
+points and foreground appearance. Ambiguous matches stay separate. The bounded
+memory holds 64 tracks and three views per track, expires photos after 2,400
+steps, and uses at most two earlier views separated by 20 degrees and 0.20 m
+from the current camera position. Repeated captures do not gain extra frame
+votes. A tracked majority category change clears prior query evidence.
+Multi-view descriptions bypass single-image CLIP screening. Restart Qwen to
+enable `reference_images`; health reports `multi_view` and responses report the
+actual image count. Legacy services retain single-image compatibility.
+
+Use `--multi-view --target-min-views 2` to require distinct positively reviewed
+views before confirmation. This does not add active viewpoint selection; a
+run may remain unconfirmed if a second useful angle never appears. Category
+view support and positive description support for each exact query are kept
+separate. A negative multi-view description cannot unlock old single-view
+scores.
+
+In a diagnostic original-house comparison of seven objects, the old/current
+single-view methods recognized 9/23 and 10/23 clear images. Positive descriptions
+or aliases were accepted in 7/16 trials for both; incorrect descriptions were
+accepted in 2/28 and 0/28. Automatic historical views did not improve these
+counts. These correlated development examples do not establish general
+accuracy or navigation success. A larger-context crop and an offline color
+consistency rule remain experiments, outside this implementation.
+
+CPU regression checks (models are replaced by test doubles):
+
+```bash
+.venv/bin/python -m unittest tests.test_goal_matching tests.test_goal_verification_service \
+  tests.test_clip_qwen_prefilter tests.test_object_observations tests.test_qwen_vl_perception
+```

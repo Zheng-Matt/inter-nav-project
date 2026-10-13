@@ -49,7 +49,18 @@ def parse_args():
     parser.add_argument('--goal-match-confidence', type=float, default=0.80)
     parser.add_argument('--goal-embedding-margin', type=float, default=0.03)
     parser.add_argument('--goal-node-confidence', type=float, default=0.10)
+    parser.add_argument('--goal-proposal-agreement', action=argparse.BooleanOptionalAction, default=True,
+                        help='Abstain from positive description evidence when known detector and VL categories disagree.')
     parser.add_argument('--goal-embedding-threshold', type=float, default=0.24)
+    parser.add_argument('--description-clip-prefilter', action=argparse.BooleanOptionalAction, default=False,
+                        help='Use CLIP to skip description review; Qwen still classifies every candidate.')
+    parser.add_argument('--description-clip-threshold', type=float, default=0.15)
+    parser.add_argument('--multi-view', action=argparse.BooleanOptionalAction, default=False,
+                        help='Retain distinct object views for Qwen; does not change robot movement.')
+    parser.add_argument('--target-min-views',type=int,default=1,
+                        help='Distinct reviewed views needed for confirmation when the updated multi-view service is active.')
+    parser.add_argument('--geometry-filter', action=argparse.BooleanOptionalAction, default=True,
+                        help='Filter ambiguous depth and outliers before placing objects in the map.')
     parser.add_argument(
         '--scene',
         choices=('grscene', 'programmatic'),
@@ -225,6 +236,7 @@ def main():
                 description_threshold=args.goal_match_confidence,
                 embedding_margin=args.goal_embedding_margin,
                 min_node_confidence=args.goal_node_confidence,
+                require_proposal_agreement=args.goal_proposal_agreement,
             ),
             target_embedding_threshold=args.goal_embedding_threshold,
             ground_height=GRSCENE_FLOOR_TOP if args.scene == 'grscene' else 0.0,
@@ -251,6 +263,10 @@ def main():
             qwen_vl_timeout=args.qwen_vl_timeout,
             qwen_vl_max_candidates=args.qwen_vl_max_candidates,
             qwen_vl_crop_mode=args.qwen_vl_crop_mode,
+            description_clip_prefilter=args.description_clip_prefilter,
+            description_clip_threshold=args.description_clip_threshold,
+            multi_view=args.multi_view, geometry_filter=args.geometry_filter,
+            target_min_views=args.target_min_views,
             semantic_ground_clearance=args.semantic_ground_clearance,
             enable_target_cues=args.target_cues,
             enable_qwen=args.qwen,

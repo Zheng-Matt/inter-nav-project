@@ -61,8 +61,11 @@ class SemanticExplorationConfig:
     target_cue_navigation_steps: int = 1200
     target_cue_observe_steps: int = 96
     target_cue_cooldown_steps: int = 800
+    target_min_views: int = 1
 
     def __post_init__(self):
+        if not 1 <= self.target_min_views <= 3:
+            raise ValueError('target_min_views must be between one and three')
         if self.target_semantic_classifier not in ('clip', 'qwen-vl'):
             raise ValueError('target_semantic_classifier must be clip or qwen-vl')
         if not self.target_query.strip():
@@ -140,6 +143,7 @@ class _CueTrack:
     observations: int = 1
     classified_label: str = 'unknown'
     cooldown_until: int = -1
+    instance_id: Optional[str] = None
 
 
 class SemanticExplorationComponent:
@@ -243,9 +247,20 @@ class SemanticExplorationComponent:
         matching, total, _ = self._node_label_evidence(self.target_node)
         return matching, total
 
+    def _target_view_support(self):
+        if self.target_node is None:
+            return 0
+        evidence=self.mapping.map.scene_graph.view_evidence()
+        if self._descriptive_goal:
+            return evidence['goals'].get(self.target_node.node_id,{}).get(self._goal_query.text,0)
+        return max((count for label,count in evidence['labels'].get(self.target_node.node_id,{}).items()
+                    if self._label_matches_goal(label)),default=1)
+
     @property
     def target_confirmed(self) -> bool:
         if self.target_node is None:
+            return False
+        if self.config.target_min_views > 1 and self._target_view_support() < self.config.target_min_views:
             return False
         descriptive = self._descriptive_goal
         if not self.config.require_lexical_confirmation and not descriptive:
@@ -693,13 +708,15 @@ class SemanticExplorationComponent:
                     or not np.isfinite(cue.position).all()
                     or self.mapping.map.occupancy.world_to_cell(cue.position[:2]) is None):
                 continue
-            nearby = [track for track in self._cue_tracks if _distance_xy(track.position, cue.position) <= 0.75]
+            nearby = [track for track in self._cue_tracks if _distance_xy(track.position, cue.position) <= 0.75
+                      and (track.instance_id is None or cue.instance_id is None or track.instance_id == cue.instance_id)]
             track = min(nearby, key=lambda item: _distance_xy(item.position, cue.position), default=None)
             if track is None:
                 self._next_cue_id += 1
                 self._cue_tracks.append(_CueTrack(
                     f'cue:{self._next_cue_id}', tuple(cue.position), cue.confidence,
                     cue.step, classified_label=cue.classified_label,
+                    instance_id=cue.instance_id,
                 ))
             elif cue.step > track.last_step:
                 track.position = tuple(float(value) for value in (

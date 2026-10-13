@@ -10,6 +10,7 @@ from typing import Iterable, Optional
 import numpy as np
 
 from grutopia_extension.interactive_navigation.mapping import FusedMap, MappingConfig, PlanningError, SemanticDetection
+from grutopia_extension.interactive_navigation.object_observations import bounds_overlap
 from grutopia_extension.interactive_navigation.state_machine import (
     ControllerCommand,
     InteractionState,
@@ -184,6 +185,7 @@ class MapNavigationRuntime:
                     waypoint_spacing=0.30,
                 )
         self._last_lidar_physics_step = -1
+        self._last_camera_capture_step = None
         self._planned_state: Optional[InteractionState] = None
         self._planned_path = None
         self._planned_goal = None
@@ -266,9 +268,12 @@ class MapNavigationRuntime:
                 self._last_lidar_physics_step = physics_step
 
         camera = sensors.get('camera', {})
-        if step % self.rgb_interval == 0:
+        capture_step = camera.get('capture_step')
+        fresh_camera = capture_step is None or capture_step != self._last_camera_capture_step
+        if step % self.rgb_interval == 0 and fresh_camera:
             points, colors, point_image = _camera_cloud(camera)
             if len(points) > 0:
+                self._last_camera_capture_step = capture_step
                 detections = ()
                 if self.use_scene_graph:
                     detections = self._camera_semantic_detections(
@@ -355,6 +360,8 @@ class MapNavigationRuntime:
                 point_image=point_image,
                 target=self.semantic_target,
                 step=step,
+                **({'camera_position': camera.get('position'), 'capture_step': camera.get('capture_step')}
+                   if camera.get('capture_step') is not None else {}),
             )
             semantic_detections = []
             for detection in detections:
@@ -1134,6 +1141,7 @@ class MapNavigationRuntime:
                     for node in graph.nodes if node.kind == 'object'
                 },
                 'goal_match_evidence': self.map.scene_graph.goal_match_evidence(),
+                'view_evidence': self.map.scene_graph.view_evidence(),
             }
         if self.semantic_voronoi is not None:
             payload['semantic_voronoi'] = self.semantic_voronoi.to_dict()
@@ -1155,22 +1163,18 @@ def _camera_cloud(camera: dict):
     rgba = np.asarray(rgba)
     depth = np.asarray(depth)
     if rgba.ndim != 3 or depth.ndim != 2 or rgba.shape[:2] != depth.shape:
-        return (
-            np.empty((0, 3), dtype=np.float32),
-            np.empty((0, 3), dtype=np.uint8),
-            None,
-        )
+        raise ValueError('camera RGB and depth must align pixel-for-pixel')
     mask = np.isfinite(depth) & (depth > 0.01) & (depth < 10000.0)
     colors = rgba[..., :3][mask]
     if len(points) == depth.size:
         points = points.reshape((*depth.shape, 3))[mask]
-    count = min(len(points), len(colors))
-    points = points[:count]
-    colors = colors[:count]
+    if len(points) != len(colors):
+        raise ValueError('camera pointcloud must contain all pixels or exactly the valid depth pixels')
     point_image = np.full((*depth.shape, 3), np.nan, dtype=np.float32)
     valid_indices = np.argwhere(mask)
-    valid_indices = valid_indices[:count]
     point_image[valid_indices[:, 0], valid_indices[:, 1]] = points
+    finite = np.isfinite(points).all(axis=1)
+    points, colors = points[finite], colors[finite]
     return points, colors, point_image
 
 
@@ -1232,6 +1236,14 @@ def _deduplicate_semantic_detections(detections) -> tuple:
         match_index = None
         incoming_embedding = detection.embedding
         for index, candidate in enumerate(merged):
+            if candidate.step != detection.step:
+                continue
+            if candidate.instance_id is not None and detection.instance_id is not None:
+                if candidate.instance_id != detection.instance_id:
+                    continue
+            if (candidate.bounds is not None and detection.bounds is not None and
+                    bounds_overlap(candidate.bounds, detection.bounds) < 0.25):
+                continue
             distance = float(
                 np.linalg.norm(
                     np.asarray(candidate.position[:2], dtype=np.float64)
@@ -1285,6 +1297,10 @@ def _deduplicate_semantic_detections(detections) -> tuple:
             ))),
             goal_query=goal_source.goal_query,
             goal_match_score=goal_score,
+            instance_id=geometry.instance_id, bounds=geometry.bounds,
+            position_quality=geometry.position_quality,
+            view_support=geometry.view_support,
+            goal_view_support=goal_source.goal_view_support if goal_score is not None else 0,
         )
     return tuple(merged)
 
