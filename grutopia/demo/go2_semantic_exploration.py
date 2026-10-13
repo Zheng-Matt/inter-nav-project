@@ -134,6 +134,8 @@ def parse_args():
     parser.add_argument('--record-every', type=int, default=20)
     parser.add_argument('--record-raw-rgb', action='store_true',
                         help='Save unannotated sensor RGB at mapping frames under <record-dir>/raw_rgb.')
+    parser.add_argument('--record-perception-inputs', action='store_true',
+                        help='Save aligned RGB, depth, world points and camera pose for offline replay.')
     parser.add_argument('--video-fps', type=float, default=12.0)
     parser.add_argument('--rendering-interval', type=int, default=4)
     parser.add_argument(
@@ -250,6 +252,7 @@ def main():
             record_dir=record_dir,
             record_every=args.record_every,
             record_raw_rgb=args.record_raw_rgb,
+            record_perception_inputs=args.record_perception_inputs,
             video_fps=args.video_fps,
             map_output=map_output,
             policy_path=args.policy_path,

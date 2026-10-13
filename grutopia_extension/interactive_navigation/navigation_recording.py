@@ -49,10 +49,13 @@ class NavigationRecordingSession:
         third_person_pitch_degrees: float = 50.0,
         third_person_fov_degrees: float = 80.0,
         record_raw_rgb: bool = False,
+        record_perception_inputs: bool = False,
     ):
         self.capture_interval = capture_interval
         self.raw_rgb_directory = Path(output_dir) / 'raw_rgb' if record_raw_rgb else None
         self._raw_rgb_steps = set()
+        self.input_directory = Path(output_dir) / 'perception_inputs' if record_perception_inputs else None
+        self._input_steps = set()
         # Navigation platforms (Go2/G1) have no tp_camera; recording that
         # stream would only produce a black video.
         self.recorder = InteractionVideoRecorder(
@@ -110,6 +113,17 @@ class NavigationRecordingSession:
         )
 
     def record_perception(self, step: int, robot_observation: dict, mapping_runtime):
+        camera = robot_observation.get('sensors', {}).get('camera', {})
+        capture = int(camera.get('capture_step', step))
+        if (self.input_directory is not None and step >= 0 and step % mapping_runtime.rgb_interval == 0
+                and capture not in self._input_steps and camera.get('depth') is not None
+                and camera.get('pointcloud') is not None and camera.get('rgba') is not None):
+            self.input_directory.mkdir(parents=True, exist_ok=True)
+            with (self.input_directory / f'frame_{capture:06d}.npz').open('xb') as file:
+                np.savez_compressed(file, rgba=camera['rgba'], depth=camera['depth'],
+                    pointcloud=camera['pointcloud'], camera_position=camera['position'],
+                    camera_orientation=camera['orientation'], capture_step=capture)
+            self._input_steps.add(capture)
         if (self.raw_rgb_directory is not None and step >= 0
                 and step % mapping_runtime.rgb_interval == 0 and step not in self._raw_rgb_steps):
             path = write_raw_rgb_frame(self.raw_rgb_directory, step, robot_observation)

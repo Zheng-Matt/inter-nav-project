@@ -3,11 +3,41 @@
 import csv
 import json
 import math
+import signal
 import subprocess
 import sys
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+class NavigationInterrupt(KeyboardInterrupt):
+    def __init__(self, signal_number):
+        self.signal_number = signal_number
+        super().__init__(signal_number)
+
+
+class NavigationInterruptHandler:
+    """Keep SIGINT/SIGTERM inside the cleanup path after Kit initializes."""
+
+    def __init__(self):
+        self.previous = {number: signal.getsignal(number) for number in (signal.SIGINT, signal.SIGTERM)}
+        self.installed = False
+
+    def install(self):
+        for number in self.previous:
+            signal.signal(number, self._interrupt)
+        self.installed = True
+
+    @staticmethod
+    def _interrupt(number, frame):
+        raise NavigationInterrupt(number)
+
+    def restore(self):
+        if self.installed:
+            for number, handler in self.previous.items():
+                signal.signal(number, handler)
+            self.installed = False
 
 
 def _now():

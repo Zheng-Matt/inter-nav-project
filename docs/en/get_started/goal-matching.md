@@ -207,3 +207,36 @@ CPU regression checks (models are replaced by test doubles):
 .venv/bin/python -m unittest tests.test_goal_matching tests.test_goal_verification_service \
   tests.test_clip_qwen_prefilter tests.test_object_observations tests.test_qwen_vl_perception
 ```
+
+
+## Reproducible sensor inputs and interruption records
+
+`--record-perception-inputs` saves aligned RGB, depth, world points, camera pose
+and capture step as NPZ files under `<record-dir>/perception_inputs`. Captures
+contain no inference labels, deduplicate capture identity and refuse overwrite.
+Use a fresh output directory to replay the exact inputs without Isaac Sim:
+
+```bash
+python grutopia/demo/replay_object_observations.py \
+  --inputs grutopia/results/<run>/perception_inputs --target television \
+  --qwen-vl-url http://127.0.0.1:12195/classify \
+  --record-dir grutopia/results/<new-replay>
+# Add --multi-view to compare historical-view recognition.
+# Add --baseline-root <frozen-checkout> to import an earlier implementation.
+```
+
+Replay records input hashes, recognition timing and object-map results; it does
+not execute navigation or certify accuracy without separate annotations.
+
+After Isaac initialization, SIGINT/SIGTERM request the runner's cleanup path.
+The observed exit is saved before video/map finalization with
+`artifacts_complete: false`, then replaced after cleanup completes. CPU checks
+use real OS signals and a fatal cleanup subprocess to verify saved outcomes.
+SIGKILL, stalled native initialization and native shutdown crashes cannot
+guarantee complete artifacts or a matching process exit. These changes do not
+claim to fix Isaac/Kit shutdown failures; the native fast-shutdown setting is
+unchanged. `final_map.json` alone is never proof of successful navigation.
+
+```bash
+.venv/bin/python -m unittest tests.test_raw_rgb_recording tests.test_semantic_run_artifacts
+```

@@ -107,6 +107,7 @@ class Go2SemanticExplorationRunConfig:
     record_dir: str = ''
     record_every: int = 20
     record_raw_rgb: bool = False
+    record_perception_inputs: bool = False
     video_fps: float = 12.0
     map_output: str = ''
     policy_path: str = DEFAULT_GO2_POLICY_PATH
@@ -412,7 +413,7 @@ def run_go2_semantic_exploration(
         write_run_summary,
     )
     from grutopia_extension.interactive_navigation.semantic_run_artifacts import (
-        SemanticRunArtifacts,
+        NavigationInterruptHandler, SemanticRunArtifacts,
     )
     from grutopia_extension.interactive_navigation.semantic_voronoi import SemanticVoronoiConfig
 
@@ -426,6 +427,7 @@ def run_go2_semantic_exploration(
     last_step = None
     stop_reason = 'incomplete'
     error_type = None
+    interrupt_handler = NavigationInterruptHandler()
     artifacts = SemanticRunArtifacts(run.record_dir, run, profile) if run.record_dir else None
     run_summary_path = summary_path(run.record_dir, run.map_output)
     if run_summary_path is not None:
@@ -525,6 +527,9 @@ def run_go2_semantic_exploration(
             active_gpu=run.gpu,
             physics_gpu=run.gpu if run.physics_gpu is None else run.physics_gpu,
         )
+        # SimulationApp installs a SIGINT handler that closes Kit immediately.
+        # Restore Python interruption so our finally block saves videos/results first.
+        interrupt_handler.install()
         configure_scene_mdl_paths(profile.scene_asset_path)
         import_extensions(('controllers', 'objects', 'robots', 'sensors', 'tasks'))
         env = Env(runtime)
@@ -644,6 +649,7 @@ def run_go2_semantic_exploration(
                 third_person_pitch_degrees=profile.third_person_pitch_degrees,
                 third_person_fov_degrees=profile.third_person_fov_degrees,
                 record_raw_rgb=run.record_raw_rgb,
+                record_perception_inputs=run.record_perception_inputs,
             )
             recorder.prime(robot_observation)
         sensor_rig.prime(robot_observation)
@@ -736,9 +742,9 @@ def run_go2_semantic_exploration(
                     print(json.dumps({'event': 'step_timing', **{k: round(v, 2) for k, v in timing.items()}}), flush=True)
             if terminated:
                 raise RuntimeError('task terminated during Go2 semantic exploration')
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as interruption:
         stop_reason = 'interrupted'
-        result_code = 130
+        result_code = 128 + getattr(interruption, 'signal_number', 2)
         print(json.dumps({'event': 'semantic_exploration_stopped', 'reason': stop_reason, 'step': last_step}), flush=True)
     except Exception as error:
         error_type = type(error).__name__
@@ -756,6 +762,35 @@ def run_go2_semantic_exploration(
         )
     finally:
         artifact_errors = []
+        # Persist the observed exit before map/video cleanup can stall or be
+        # killed. The completed artifact record below replaces this journal.
+        try:
+            if run_summary_path is not None:
+                pending_summary = build_run_summary(
+                    target_query=run.target_query,
+                    detection_mode=run.semantic_detection_mode,
+                    max_steps=run.max_steps,
+                    profile_goal=profile.goals[0] if profile.goals else None,
+                    component=component,
+                    terminal_result=terminal_result,
+                    step=last_step,
+                    robot_observation=robot_observation,
+                    stop_reason=stop_reason,
+                    error_type=error_type,
+                    exit_code=result_code,
+                )
+                pending_summary.update({
+                    'completion_recorded': True,
+                    'run_id': None if artifacts is None else artifacts.run_id,
+                    'started_at': None if artifacts is None else artifacts.started_at,
+                    'finished_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+                    'artifacts_complete': False,
+                    'artifact_phase': 'finalizing',
+                    'artifact_errors': [],
+                })
+                write_run_summary(run_summary_path, pending_summary)
+        except Exception:
+            traceback.print_exc()
         for name, cleanup in (
             ('trace', None if artifacts is None else lambda: artifacts.finish(last_step, component, robot_observation)),
             ('video', None if recorder is None else recorder.close),
@@ -793,6 +828,7 @@ def run_go2_semantic_exploration(
                 })
                 write_run_summary(run_summary_path, summary)
         finally:
+            interrupt_handler.restore()
             for cleanup in (
                 None if qwen_worker is None else qwen_worker.close,
                 env.close if env is not None else (
